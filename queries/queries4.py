@@ -1,6 +1,6 @@
 """
 
-This script answers the question: What was the most common accusation in each state? 
+This script answers the question: What was the most common accusations (3) in each state? 
 
 
 """
