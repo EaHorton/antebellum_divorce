@@ -1,7 +1,7 @@
 """
 
-This script answers the question: How did accusations change ver time?
-
+This script answers the question: How did accusations change over time?
+Not super relevant because I don't have statistical significance. 
 
 """
 

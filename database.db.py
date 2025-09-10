@@ -197,7 +197,24 @@ c.executemany('INSERT INTO Petition_People_Lookup VALUES (?, ?)', lookup)
 c.executemany('INSERT INTO Reasoning VALUES (?, ?)', reasoning)
 c.executemany('INSERT INTO Archive_Lookup VALUES (?, ?)', archive)
 c.executemany('INSERT INTO Court VALUES (?, ?, ?)', court)
+
 c.executemany('INSERT INTO Additional_Requests VALUES (?, ?)', addreq)
+
+# --- Result Table ---
+result_rows = []
+for petition in petitions:
+    petition_id = petition[0]
+    result_cell = petition[9]  # result column
+    if result_cell:
+        results = [r.strip() for r in result_cell.split(',') if r.strip()]
+        for res in results:
+            result_rows.append((petition_id, res))
+
+c.execute('''CREATE TABLE Result (
+    petition_id INTEGER,
+    result TEXT
+)''')
+c.executemany('INSERT INTO Result VALUES (?, ?)', result_rows)
 
 conn.commit()
 conn.close()
