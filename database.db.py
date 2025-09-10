@@ -186,7 +186,7 @@ c.execute('''CREATE TABLE Court (
     state TEXT
 )''')
 c.execute('''CREATE TABLE Additional_Requests (
-    additional_requests_id INTEGER PRIMARY KEY,
+    additional_requests_id INTEGER,
     additional_requests TEXT
 )''')
 
@@ -198,7 +198,22 @@ c.executemany('INSERT INTO Reasoning VALUES (?, ?)', reasoning)
 c.executemany('INSERT INTO Archive_Lookup VALUES (?, ?)', archive)
 c.executemany('INSERT INTO Court VALUES (?, ?, ?)', court)
 
-c.executemany('INSERT INTO Additional_Requests VALUES (?, ?)', addreq)
+
+# --- Split Additional Requests into separate rows ---
+split_addreq = []
+for addreq_id, req in addreq:
+    if req:
+        requests = [r.strip() for r in req.split(',') if r.strip()]
+        for r in requests:
+            split_addreq.append((addreq_id, r))
+
+# Overwrite the Additional_Requests table with split entries
+c.execute('DROP TABLE IF EXISTS Additional_Requests')
+c.execute('''CREATE TABLE Additional_Requests (
+    additional_requests_id INTEGER,
+    additional_requests TEXT
+)''')
+c.executemany('INSERT INTO Additional_Requests VALUES (?, ?)', split_addreq)
 
 # --- Result Table ---
 result_rows = []
@@ -215,6 +230,7 @@ c.execute('''CREATE TABLE Result (
     result TEXT
 )''')
 c.executemany('INSERT INTO Result VALUES (?, ?)', result_rows)
+
 
 conn.commit()
 conn.close()
