@@ -223,8 +223,12 @@ for petition in petitions:
     if result_cell:
         results = [r.strip() for r in result_cell.split(',') if r.strip()]
         for res in results:
+         # Rename "denied" to "rejected"
+            if res.lower() == "denied":
+                res = "rejected"
             result_rows.append((petition_id, res))
 
+c.execute('DROP TABLE IF EXISTS Result')
 c.execute('''CREATE TABLE Result (
     petition_id INTEGER,
     result TEXT
