@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Plot</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<div class="container mt-3">
+  <h1>Plot</h1>
+  <div class="mb-2">
+    <a href="/">Back</a>
+  </div>
+  <form method="GET" action="/plot">
+    <div class="form-row">
+      <div class="form-group col-md-4">
+        <label>Table</label>
+        <select name="table" class="form-control">
+          {% for t in tables %}
+            <option value="{{t}}" {% if table==t %}selected{% endif %}>{{t}}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group col-md-4">
+        <label>Column</label>
+        <select name="column" class="form-control">
+          {% if cols %}
+            {% for c in cols %}
+              <option value="{{c}}" {% if column==c %}selected{% endif %}>{{c}}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div class="form-group col-md-2">
+        <label>Top N</label>
+        <input name="topn" value="20" class="form-control" />
+      </div>
+      <div class="form-group col-md-2 align-self-end">
+        <button class="btn btn-primary">Plot</button>
+      </div>
+    </div>
+  </form>
+
+  {% if labels and values %}
+    <canvas id="chart" width="800" height="400"></canvas>
+    <script>
+      const labels = {{ labels|tojson }};
+      const data = {{ values|tojson }};
+      const ctx = document.getElementById('chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{ label: 'Count', data: data }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true
+        }
+      });
+    </script>
+  {% endif %}
+</div>
+</body>
+</html>
