@@ -32,33 +32,53 @@
           {% endif %}
         </select>
       </div>
-      <div class="form-group col-md-2">
-        <label>Top N</label>
-        <input name="topn" value="20" class="form-control" />
-      </div>
-      <div class="form-group col-md-2 align-self-end">
-        <button class="btn btn-primary">Plot</button>
-      </div>
+        <div class="form-group col-md-2">
+          <label>Group by (optional)</label>
+          <input class="form-control" name="group_by" value="{{ group_by if group_by is defined else '' }}" placeholder="e.g. state">
+        </div>
+        <div class="form-group col-md-2">
+          <label>Top N</label>
+          <input name="topn" value="20" class="form-control" />
+        </div>
+        <div class="form-group col-md-2">
+          <label>Chart type</label>
+          <select name="chart_type" class="form-control">
+            <option value="bar" {% if chart_type=='bar' %}selected{% endif %}>Bar</option>
+            <option value="pie" {% if chart_type=='pie' %}selected{% endif %}>Pie</option>
+            <option value="line" {% if chart_type=='line' %}selected{% endif %}>Line</option>
+          </select>
+        </div>
+        <div class="form-group col-md-2 align-self-end">
+          <button class="btn btn-primary">Plot</button>
+        </div>
     </div>
   </form>
 
   {% if labels and values %}
     <canvas id="chart" width="800" height="400"></canvas>
     <script>
-      const labels = {{ labels|tojson }};
-      const data = {{ values|tojson }};
-      const ctx = document.getElementById('chart').getContext('2d');
-      new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [{ label: 'Count', data: data }]
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true
+      (function(){
+        const labels = {{ labels|tojson }};
+        const data = {{ values|tojson }};
+        const chartType = '{{ chart_type if chart_type is defined else "bar" }}';
+        const ctx = document.getElementById('chart').getContext('2d');
+        const config = {
+          type: chartType,
+          data: {
+            labels: labels,
+            datasets: [{ label: 'Count', data: data }]
+          },
+          options: { responsive: true }
+        };
+        if (chartType === 'bar') {
+          config.options.indexAxis = 'y';
         }
-      });
+        if (chartType === 'pie') {
+          // pie charts do not use indexAxis
+          delete config.options.indexAxis;
+        }
+        new Chart(ctx, config);
+      })();
     </script>
   {% endif %}
 </div>

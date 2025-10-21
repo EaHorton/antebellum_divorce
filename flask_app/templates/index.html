@@ -14,6 +14,10 @@
         <label>Table</label>
         <select name="table" class="form-control">
           {% for t in tables %}
+        <div class="form-group col-md-2">
+          <label for="page" class="visually-hidden">Page</label>
+          <input class="form-control" id="page" name="page" placeholder="Page" value="{{ page }}">
+        </div>
             <option value="{{t}}" {% if t==table %}selected{% endif %}>{{t}}</option>
           {% endfor %}
         </select>
@@ -26,8 +30,21 @@
         <label>WHERE clause (without WHERE)</label>
         <input type="text" name="where" value="{{where}}" class="form-control" />
       </div>
-      <div class="form-group col-md-2 align-self-end">
+      <div class="table-responsive">{{ preview.to_html(classes='table table-striped', index=False) | safe }}</div>
+      <nav aria-label="Page navigation" class="mt-2">
+        <ul class="pagination">
+          <li class="page-item {% if page<=1 %}disabled{% endif %}"><a class="page-link" href="?table={{ table }}&nrows={{ nrows }}&where={{ where }}&page={{ page-1 }}">Previous</a></li>
+          <li class="page-item disabled"><span class="page-link">Page {{ page }} / {{ total_pages }} ({{ total_count }} rows)</span></li>
+          <li class="page-item {% if page>=total_pages %}disabled{% endif %}"><a class="page-link" href="?table={{ table }}&nrows={{ nrows }}&where={{ where }}&page={{ page+1 }}">Next</a></li>
+        </ul>
+      </nav>
         <button class="btn btn-primary">Preview</button>
+
+    <div class="mt-4">
+      <h5>Prebuilt queries</h5>
+      <a class="btn btn-outline-secondary" href="{{ url_for('prebuilt') }}?q=reasoning_by_state">Most common reasoning by state</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('prebuilt') }}?q=counts_by_result">Counts by result</a>
+    </div>
       </div>
     </div>
   </form>
