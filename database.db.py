@@ -311,8 +311,10 @@ def split_people_rows(db_path=DB_PATH):
     new_people = []  # tuples (name, status, scope)
     old_to_new = {}  # old_id -> [new_id, ...]
 
+    import re
     for person_id, name, status, scope in people:
-        parts = [p.strip() for p in (name or '').split(',') if p.strip()]
+        # split on commas, ampersands, the word ' and ', or semicolons
+        parts = [p.strip() for p in re.split(r"\s*(?:,|&| and |;)\s*", (name or '')) if p.strip()]
         if len(parts) <= 1:
             # keep as-is
             old_to_new[person_id] = [person_id]
@@ -341,7 +343,7 @@ def split_people_rows(db_path=DB_PATH):
 
     # Remove any original rows that had multiple names (to avoid duplicates)
     for person_id, name, status, scope in people:
-        parts = [p.strip() for p in (name or '').split(',') if p.strip()]
+        parts = [p.strip() for p in re.split(r"\s*(?:,|&| and |;)\s*", (name or '')) if p.strip()]
         if len(parts) > 1:
             c.execute('DELETE FROM People WHERE person_id=?', (person_id,))
 
@@ -369,11 +371,12 @@ def migrate_people_inplace(db_path=DB_PATH):
     links = c.execute('SELECT petition_id, person_id FROM Petition_People_Lookup').fetchall()
 
     old_to_new = {}
+    import re
     for person_id, name, status, scope in people:
-        if not name or ',' not in name:
+        if not name or (',' not in name and '&' not in name and ' and ' not in name and ';' not in name):
             old_to_new[person_id] = [person_id]
             continue
-        parts = [p.strip() for p in name.split(',') if p.strip()]
+        parts = [p.strip() for p in re.split(r"\s*(?:,|&| and |;)\s*", name) if p.strip()]
         created_ids = []
         for i, part in enumerate(parts):
             if i == 0:
@@ -410,8 +413,10 @@ def migrate_people_inplace(db_path=DB_PATH):
         for new_pid in mapped:
             c.execute('INSERT OR IGNORE INTO Petition_People_Lookup (petition_id, person_id) VALUES (?, ?)', (petition_id, new_pid))
 
+    import re as _re
     for person_id, name, status, scope in people:
-        if name and ',' in name:
+        parts = [p.strip() for p in _re.split(r"\s*(?:,|&| and |;)\s*", (name or '')) if p.strip()]
+        if len(parts) > 1:
             c.execute('DELETE FROM People WHERE person_id=?', (person_id,))
 
     conn.commit()
@@ -422,11 +427,21 @@ def migrate_people_inplace(db_path=DB_PATH):
 def main():
     parser = argparse.ArgumentParser(description='Create normalized dv_petitions.db and optionally run migrations')
     parser.add_argument('--migrate-people', action='store_true', help='Run People-splitting migration in-place (creates backup)')
+    parser.add_argument('--no-migrate', action='store_true', help='Do not run the people-splitting migration after ETL')
     args = parser.parse_args()
-
+    # If user explicitly requests migration, run it.
     if args.migrate_people:
         migrate_people_inplace(DB_PATH)
         return
+
+    # If user opts out, do nothing further.
+    if args.no_migrate:
+        print('Skipping people migration (--no-migrate)')
+        return
+
+    # Default behavior: run people migration after building the DB so split names are applied.
+    print('Running people migration by default (use --no-migrate to skip)')
+    migrate_people_inplace(DB_PATH)
 
 
 if __name__ == '__main__':
