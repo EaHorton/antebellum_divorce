@@ -31,9 +31,8 @@ for idx, row in enumerate(rows, 1):
         row['year'],
         row['county'],
         row['state'],
-        row['result'],
         row['years_married'],
-        row['additional_requests']
+        row.get('additional_requests')
     ))
 
 # --- Reasoning Table ---
@@ -143,6 +142,8 @@ if os.path.exists(DB_PATH):
     os.remove(DB_PATH)
 conn = sqlite3.connect(DB_PATH)
 c = conn.cursor()
+# Enforce foreign key constraints
+c.execute('PRAGMA foreign_keys = ON')
 
 c.execute('''CREATE TABLE Petitions (
     petition_id INTEGER PRIMARY KEY,
@@ -154,19 +155,20 @@ c.execute('''CREATE TABLE Petitions (
     year TEXT,
     county TEXT,
     state TEXT,
-    result TEXT,
     years_married TEXT,
-    additional_requests TEXT
+    additional_requests_id INTEGER,
+    FOREIGN KEY(additional_requests_id) REFERENCES Additional_Requests(additional_requests_id)
 )''')
 c.execute('''CREATE TABLE Petition_Reasoning_Lookup (
     petition_id INTEGER,
     reasoning_id INTEGER
 )''')
 c.execute('''CREATE TABLE People (
-    person_id INTEGER PRIMARY KEY,
+    person_id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     enslaver_status TEXT,
-    enslaver_scope_estimate TEXT
+    enslaver_scope_estimate TEXT,
+    UNIQUE(name, enslaver_status, enslaver_scope_estimate)
 )''')
 c.execute('''CREATE TABLE Petition_People_Lookup (
     petition_id INTEGER,
@@ -186,17 +188,36 @@ c.execute('''CREATE TABLE Court (
     state TEXT
 )''')
 c.execute('''CREATE TABLE Additional_Requests (
-    additional_requests_id INTEGER,
-    additional_requests TEXT
+    additional_requests_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    additional_requests TEXT UNIQUE
 )''')
 
-c.executemany('INSERT INTO Petitions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', petitions)
-c.executemany('INSERT INTO Petition_Reasoning_Lookup VALUES (?, ?)', petition_reasoning_lookup)
-c.executemany('INSERT INTO People VALUES (?, ?, ?, ?)', people)
-c.executemany('INSERT INTO Petition_People_Lookup VALUES (?, ?)', lookup)
+# Insert Reasoning, Archive, Court lookup rows
 c.executemany('INSERT INTO Reasoning VALUES (?, ?)', reasoning)
 c.executemany('INSERT INTO Archive_Lookup VALUES (?, ?)', archive)
 c.executemany('INSERT INTO Court VALUES (?, ?, ?)', court)
+
+# Insert people using INSERT OR IGNORE and build a mapping from (name,status,scope) -> person_id
+person_key_to_id = {}
+for _pid, name, status, scope in people:
+    key = (name, status, scope)
+    c.execute('INSERT OR IGNORE INTO People (name, enslaver_status, enslaver_scope_estimate) VALUES (?, ?, ?)', (name, status, scope))
+    c.execute('SELECT person_id FROM People WHERE name=? AND enslaver_status=? AND enslaver_scope_estimate=?', (name, status, scope))
+    person_key_to_id[key] = c.fetchone()[0]
+
+# Rebuild Petition_People_Lookup using mapped person_ids (we'll insert after Petitions are created)
+new_lookup = []
+for row in rows:
+    parcel = row['parcel_number']
+    pid = petition_id_map[parcel]
+    enslaver_status = row.get('enslaver_status', '')
+    enslaver_scope = row.get('enslaver_scope_estimate', '')
+    for role in ['petitioner', 'defendant']:
+        name = row[role]
+        key = (name, enslaver_status, enslaver_scope)
+        new_person_id = person_key_to_id.get(key)
+        if new_person_id:
+            new_lookup.append((pid, new_person_id))
 
 
 # --- Split Additional Requests into separate rows ---
@@ -210,23 +231,52 @@ for addreq_id, req in addreq:
 # Overwrite the Additional_Requests table with split entries
 c.execute('DROP TABLE IF EXISTS Additional_Requests')
 c.execute('''CREATE TABLE Additional_Requests (
-    additional_requests_id INTEGER,
-    additional_requests TEXT
+    additional_requests_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    additional_requests TEXT UNIQUE
 )''')
-c.executemany('INSERT INTO Additional_Requests VALUES (?, ?)', split_addreq)
+# Insert only the split request text; allow the DB to assign unique IDs
+texts = [(r,) for (_aid, r) in split_addreq]
+c.executemany('INSERT OR IGNORE INTO Additional_Requests (additional_requests) VALUES (?)', texts)
+
+# Build a map from the inserted additional_requests text -> their new autoincremented id
+addreq_text_to_id = {}
+for aid, text in c.execute('SELECT additional_requests_id, additional_requests FROM Additional_Requests'):
+    if text:
+        addreq_text_to_id[text.lower()] = aid
+
+
+# Now insert Petitions with mapped additional_requests_id
+petitions_mapped = []
+for pet in petitions:
+    addreq_text = pet[-1]
+    addreq_id = None
+    if addreq_text and isinstance(addreq_text, str):
+        parts = [p.strip().lower() for p in addreq_text.split(',') if p.strip()]
+        for p in parts:
+            if p in addreq_text_to_id:
+                addreq_id = addreq_text_to_id[p]
+                break
+    petitions_mapped.append((pet[0], pet[1], pet[2], pet[3], pet[4], pet[5], pet[6], pet[7], pet[8], pet[9], addreq_id))
+
+c.executemany('INSERT INTO Petitions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', petitions_mapped)
+
+# Insert petition_reasoning_lookup (after Petitions exist)
+c.executemany('INSERT INTO Petition_Reasoning_Lookup VALUES (?, ?)', petition_reasoning_lookup)
+
+# Insert Petition_People_Lookup using mapped person IDs
+c.executemany('INSERT OR IGNORE INTO Petition_People_Lookup VALUES (?, ?)', new_lookup)
 
 # --- Result Table ---
 result_rows = []
-for petition in petitions:
-    petition_id = petition[0]
-    result_cell = petition[9]  # result column
+for idx, row in enumerate(rows, start=1):
+    result_cell = row.get('result')
     if result_cell:
         results = [r.strip() for r in result_cell.split(',') if r.strip()]
         for res in results:
-         # Rename "denied" to "rejected"
-            if res.lower() == "denied":
-                res = "rejected"
-            result_rows.append((petition_id, res))
+            # Rename "denied" to "rejected"
+            if res.lower() == 'denied':
+                res = 'rejected'
+            result_rows.append((idx, res))
 
 c.execute('DROP TABLE IF EXISTS Result')
 c.execute('''CREATE TABLE Result (
@@ -239,3 +289,59 @@ c.executemany('INSERT INTO Result VALUES (?, ?)', result_rows)
 conn.commit()
 conn.close()
 print('Database created as', DB_PATH)
+
+def split_people_rows(db_path=DB_PATH):
+    """
+    Migration: if any `People.name` contains multiple names separated by commas,
+    split them into separate People rows and update Petition_People to point to
+    the new person_id values. Preserves enslaver_status and enslaver_scope_estimate.
+    """
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+
+    # Read existing people and petition links
+    people = c.execute('SELECT person_id, name, enslaver_status, enslaver_scope_estimate FROM People').fetchall()
+    # table is Petition_People_Lookup with columns (petition_id, person_id)
+    links = c.execute('SELECT petition_id, person_id FROM Petition_People_Lookup').fetchall()
+
+    # Build mapping from old person_id -> list of new person_ids
+    new_people = []  # tuples (name, status, scope)
+    old_to_new = {}  # old_id -> [new_id, ...]
+
+    for person_id, name, status, scope in people:
+        parts = [p.strip() for p in (name or '').split(',') if p.strip()]
+        if len(parts) <= 1:
+            # keep as-is
+            old_to_new[person_id] = [person_id]
+            continue
+        # for multi-name entries, create new rows
+        created_ids = []
+        for i, part in enumerate(parts):
+            # preserve enslaver fields only for the first name
+            if i == 0:
+                es = status
+                esc = scope
+            else:
+                es = None
+                esc = None
+            c.execute('INSERT INTO People (name, enslaver_status, enslaver_scope_estimate) VALUES (?, ?, ?)',
+                      (part, es, esc))
+            created_ids.append(c.lastrowid)
+        old_to_new[person_id] = created_ids
+
+    # Now rebuild Petition_People_Lookup: insert links for new person_ids
+    for petition_id, person_id in links:
+        mapped = old_to_new.get(person_id, [person_id])
+        for new_id in mapped:
+            c.execute('INSERT OR IGNORE INTO Petition_People_Lookup (petition_id, person_id) VALUES (?, ?)',
+                      (petition_id, new_id))
+
+    # Remove any original rows that had multiple names (to avoid duplicates)
+    for person_id, name, status, scope in people:
+        parts = [p.strip() for p in (name or '').split(',') if p.strip()]
+        if len(parts) > 1:
+            c.execute('DELETE FROM People WHERE person_id=?', (person_id,))
+
+    conn.commit()
+    conn.close()
+    print('Split multi-name People rows and updated Petition_People links.')
