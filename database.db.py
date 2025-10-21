@@ -2,6 +2,9 @@ import csv
 import sqlite3
 import os
 from collections import defaultdict
+import argparse
+import shutil
+import datetime
 
 CSV_PATH = '/Users/eahorton/Downloads/nc_al_tn_clean_data.csv'
 DB_PATH = 'dv_petitions.db'
@@ -345,3 +348,86 @@ def split_people_rows(db_path=DB_PATH):
     conn.commit()
     conn.close()
     print('Split multi-name People rows and updated Petition_People links.')
+
+
+def migrate_people_inplace(db_path=DB_PATH):
+    """Safe in-place migration wrapper: creates a timestamped backup then runs the
+    split logic using the same semantics as split_people_rows()."""
+    if not os.path.exists(db_path):
+        raise SystemExit(f"Database {db_path} not found")
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    bak = f"{db_path}.bak.{ts}"
+    shutil.copy2(db_path, bak)
+    print('Backup created:', bak)
+
+    # Disable foreign keys while we mutate link tables
+    conn = sqlite3.connect(db_path)
+    conn.execute('PRAGMA foreign_keys = OFF')
+    c = conn.cursor()
+
+    people = c.execute('SELECT person_id, name, enslaver_status, enslaver_scope_estimate FROM People').fetchall()
+    links = c.execute('SELECT petition_id, person_id FROM Petition_People_Lookup').fetchall()
+
+    old_to_new = {}
+    for person_id, name, status, scope in people:
+        if not name or ',' not in name:
+            old_to_new[person_id] = [person_id]
+            continue
+        parts = [p.strip() for p in name.split(',') if p.strip()]
+        created_ids = []
+        for i, part in enumerate(parts):
+            if i == 0:
+                es = status
+                esc = scope
+            else:
+                es = None
+                esc = None
+
+            if es is None and esc is None:
+                row = c.execute(
+                    "SELECT person_id FROM People WHERE name=? AND enslaver_status IS NULL AND enslaver_scope_estimate IS NULL",
+                    (part,)
+                ).fetchone()
+            else:
+                row = c.execute(
+                    'SELECT person_id FROM People WHERE name=? AND enslaver_status=? AND enslaver_scope_estimate=?',
+                    (part, es, esc)
+                ).fetchone()
+
+            if row:
+                created_ids.append(row[0])
+            else:
+                c.execute(
+                    'INSERT INTO People (name, enslaver_status, enslaver_scope_estimate) VALUES (?, ?, ?)',
+                    (part, es, esc)
+                )
+                created_ids.append(c.lastrowid)
+
+        old_to_new[person_id] = created_ids
+
+    for petition_id, old_person_id in links:
+        mapped = old_to_new.get(old_person_id, [old_person_id])
+        for new_pid in mapped:
+            c.execute('INSERT OR IGNORE INTO Petition_People_Lookup (petition_id, person_id) VALUES (?, ?)', (petition_id, new_pid))
+
+    for person_id, name, status, scope in people:
+        if name and ',' in name:
+            c.execute('DELETE FROM People WHERE person_id=?', (person_id,))
+
+    conn.commit()
+    conn.close()
+    print('In-place people migration completed.')
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Create normalized dv_petitions.db and optionally run migrations')
+    parser.add_argument('--migrate-people', action='store_true', help='Run People-splitting migration in-place (creates backup)')
+    args = parser.parse_args()
+
+    if args.migrate_people:
+        migrate_people_inplace(DB_PATH)
+        return
+
+
+if __name__ == '__main__':
+    main()
