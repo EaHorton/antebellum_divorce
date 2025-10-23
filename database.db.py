@@ -9,6 +9,16 @@ import datetime
 CSV_PATH = '/Users/eahorton/Downloads/nc_al_tn_clean_data.csv'
 DB_PATH = 'dv_petitions.db'
 
+# Define terminology replacements for reasoning terms
+REASONING_REPLACEMENTS = {
+    'prostitution(F)': 'sex_work(F)',
+    'adultery_with_prostitute(M)': 'adultery_with_sex_worker(M)',
+    'possible_prostitution(F)': 'possible_sex_work(F)',
+    'allowed_prostitution_in_his_home(M)': 'allowed_sex_work_in_home(M)',
+    'sex_with_prostitutes(M)': 'sex_with_sex_workers(M)',
+    'adultery_with_prostitutes(M)': 'adultery_with_sex_workers(M)'
+}
+
 # Read CSV and clean whitespace from headers and cells
 rows = []
 with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
@@ -47,6 +57,8 @@ reasoning_id_counter = 1
 for row in rows:
     terms = [t.strip() for t in row['reasoning'].split(',') if t.strip()]
     for term in terms:
+        # Apply terminology replacement
+        term = REASONING_REPLACEMENTS.get(term, term)
         if term and term not in reasoning_set:
             reasoning_set.add(term)
             reasoning_id_map[term] = reasoning_id_counter
@@ -58,6 +70,8 @@ petition_reasoning_lookup = []
 for idx, row in enumerate(rows, 1):
     terms = [t.strip() for t in row['reasoning'].split(',') if t.strip()]
     for term in terms:
+        # Apply terminology replacement to ensure lookup matches
+        term = REASONING_REPLACEMENTS.get(term, term)
         reasoning_id = reasoning_id_map.get(term)
         if reasoning_id:
             petition_reasoning_lookup.append((idx, reasoning_id))
@@ -91,20 +105,6 @@ for row in rows:
         key = (name, enslaver_status, enslaver_scope)
         if name:
             lookup.append((pid, person_id_map[key]))
-
-# --- Reasoning Table ---
-reasoning_set = set()
-reasoning = []
-reasoning_id_map = {}
-reasoning_id_counter = 1
-for row in rows:
-    terms = [t.strip() for t in row['reasoning'].split(',') if t.strip()]
-    for term in terms:
-        if term and term not in reasoning_set:
-            reasoning_set.add(term)
-            reasoning_id_map[term] = reasoning_id_counter
-            reasoning.append((reasoning_id_counter, term))
-            reasoning_id_counter += 1
 
 # --- Archive Lookup Table ---
 archive_set = set()
