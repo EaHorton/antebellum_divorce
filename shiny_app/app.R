@@ -72,8 +72,10 @@ ui <- fluidPage(
       
       conditionalPanel(
         condition = "input.active_filters.includes('reasoning')",
-        selectInput('reasoning_type', 'Reasoning Category',
-                   choices = c('All' = 'all'))  # Will be populated dynamically
+        selectizeInput('reasoning_type', 'Reasoning Category',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select reasons'))  # Will be populated dynamically
       ),
       
       conditionalPanel(
@@ -189,8 +191,9 @@ server <- function(input, output, session) {
     # Build WHERE clause for filters
     where_clauses <- c()
     
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
+      reasoning_conditions <- paste(sprintf("r.reasoning = '%s'", input$reasoning_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", reasoning_conditions, ")"))
     }
     
     if ('party' %in% input$active_filters) {
@@ -218,7 +221,8 @@ server <- function(input, output, session) {
         COUNT(DISTINCT p.petition_id) as value,
         p.court as courts,
         GROUP_CONCAT(DISTINCT res.result) as results,
-        GROUP_CONCAT(DISTINCT p.year) as years
+        GROUP_CONCAT(DISTINCT p.year) as years,
+        GROUP_CONCAT(DISTINCT r.reasoning) as reasons
       FROM Geolocations g
       INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
       LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
@@ -285,6 +289,7 @@ server <- function(input, output, session) {
           "Total Petitions: ", value, "<br>",
           "Years: ", years, "<br>",
           "Courts: ", courts, "<br>",
+          "Reasons: ", reasons, "<br>",
           "Results: ", results, "<br>",
           "<hr style='margin: 5px 0;'>",
           "Click for more details below"
@@ -309,14 +314,14 @@ server <- function(input, output, session) {
     }
     
     # Format data for display
-    stats <- data[c("county", "state", "value", "courts")]
+    stats <- data[c("county", "state", "value", "courts", "reasons")]
     stats <- stats[order(-stats$value),]
     stats <- stats[stats$value > 0,]  # Only show counties with data
     
     # Build title based on active filters
     title_parts <- c()
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      title_parts <- c(title_parts, sprintf("Reasoning: %s", input$reasoning_type))
+    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
+      title_parts <- c(title_parts, sprintf("Reasoning: %s", paste(input$reasoning_type, collapse = ", ")))
     }
     if ('party' %in% input$active_filters) {
       title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
@@ -335,7 +340,8 @@ server <- function(input, output, session) {
       "County",
       "State",
       sprintf("Petitions %d-%d%s", input$year_range[1], input$year_range[2], filter_text),
-      "Courts")
+      "Courts",
+      "Reasons")
     
     datatable(stats,
               options = list(
@@ -401,8 +407,9 @@ server <- function(input, output, session) {
     # Build WHERE clause for filters
     where_clauses <- c()
     
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
+      reasoning_conditions <- paste(sprintf("r.reasoning = '%s'", input$reasoning_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", reasoning_conditions, ")"))
     }
     
     if ('party' %in% input$active_filters) {
