@@ -45,6 +45,16 @@ ui <- fluidPage(
         border-radius: 4px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       }
+      .results-panel {
+        margin-top: 20px;
+        padding: 15px;
+        border-radius: 4px;
+        background-color: #ffffff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      #download_filtered_csv {
+        margin-top: 10px;
+      }
     ")
   ),
   tags$div(class = "title-panel", "Antebellum Divorce Petitions"),
@@ -107,10 +117,20 @@ ui <- fluidPage(
         tabPanel("Map", 
                 leafletOutput("map", height = "600px"),
                 hr(),
-                DTOutput("county_stats")),
-        tabPanel("Data Table", 
+                DTOutput("county_stats"),
+                
+                # Conditional panel for filtered results
+                conditionalPanel(
+                  condition = "input.active_filters && input.active_filters.length > 0",
+                  div(class = "results-panel",
+                    h3("Filtered Results", class = "title-panel", style = "font-size: 1.5rem; margin-top: 0;"),
+                    DTOutput("filtered_results_table"),
+                    downloadButton('download_filtered_csv', 'Download Filtered Results')
+                  )
+                )),
+        tabPanel("All Petitions", 
                 DTOutput("petitions_table"),
-                downloadButton('download_csv', 'Download CSV'))
+                downloadButton('download_csv', 'Download All Petitions'))
       )
     )
   )
@@ -171,7 +191,7 @@ server <- function(input, output, session) {
     }
     
     if ('results' %in% input$active_filters) {
-      where_clauses <- c(where_clauses, sprintf("LOWER(p.petition_result) LIKE '%%%s%%'", input$result_type))
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.result) LIKE '%%%s%%'", input$result_type))
     }
     
     # Combine all conditions
@@ -337,6 +357,84 @@ server <- function(input, output, session) {
     filename = function() paste0('petitions_', Sys.Date(), '.csv'),
     content = function(file) {
       write.csv(query_data(), file, row.names = FALSE)
+    }
+  )
+
+  # Function to get filtered results data
+  get_filtered_results <- function() {
+    if (is.null(input$year_range)) return(NULL)
+    
+    # Base query with year filter
+    base_sql <- sprintf('
+      SELECT DISTINCT
+        p.petition_id,
+        p.year,
+        p.county,
+        p.state,
+        GROUP_CONCAT(DISTINCT r.reasoning) as reasoning_list,
+        GROUP_CONCAT(DISTINCT r.party_accused) as party_accused,
+        p.result
+      FROM Petitions p
+      LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+      LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+      WHERE p.petition_id IS NOT NULL 
+      AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+    ', input$year_range[1], input$year_range[2])
+    
+    # Build WHERE clause based on active filters
+    where_clauses <- c()
+    
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    }
+    
+    if ('party' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
+    }
+    
+    if ('results' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.result) LIKE '%%%s%%'", input$result_type))
+    }
+    
+    # Combine all conditions
+    where_clause <- if (length(where_clauses) > 0) {
+      paste("AND", paste(where_clauses, collapse = " AND "))
+    } else {
+      ""
+    }
+    
+    # Complete query
+    sql <- paste0(base_sql, where_clause, " GROUP BY p.petition_id ORDER BY p.year, p.state, p.county")
+    
+    dbGetQuery(conn, sql)
+  }
+  
+  # Render filtered results table
+  output$filtered_results_table <- renderDT({
+    data <- get_filtered_results()
+    if (is.null(data)) return(NULL)
+    
+    # Rename columns for display
+    colnames(data) <- c("Petition ID", "Year", "County", "State", "Reasoning", "Party Accused", "Result")
+    
+    datatable(data,
+              options = list(
+                pageLength = 25,
+                scrollX = TRUE,
+                dom = 'Bfrtip'
+              ),
+              class = 'cell-border stripe',
+              style = 'bootstrap')
+  })
+  
+  # Download handler for filtered results
+  output$download_filtered_csv <- downloadHandler(
+    filename = function() {
+      filter_text <- paste0(input$active_filters, collapse = "_")
+      paste0('petitions_filtered_', filter_text, '_', Sys.Date(), '.csv')
+    },
+    content = function(file) {
+      write.csv(get_filtered_results(), file, row.names = FALSE)
     }
   )
 
