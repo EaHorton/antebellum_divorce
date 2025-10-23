@@ -66,7 +66,8 @@ ui <- fluidPage(
                         choices = c(
                           'Reasoning' = 'reasoning',
                           'Party Accused' = 'party',
-                          'Court Type' = 'court'
+                          'Court Type' = 'court',
+                          'Result' = 'result'
                         )),
       
       conditionalPanel(
@@ -87,6 +88,12 @@ ui <- fluidPage(
       conditionalPanel(
         condition = "input.active_filters.includes('court')",
         selectInput('court_type', 'Court Type',
+                   choices = c('All' = 'all'))  # Will be populated dynamically
+      ),
+
+      conditionalPanel(
+        condition = "input.active_filters.includes('result')",
+        selectInput('result_type', 'Petition Result',
                    choices = c('All' = 'all'))  # Will be populated dynamically
       ),
       
@@ -163,11 +170,18 @@ server <- function(input, output, session) {
   
   # Populate court choices dynamically
   observe({
-    courts <- dbGetQuery(conn, "SELECT court_name FROM Court ORDER BY court_name")
+    courts <- dbGetQuery(conn, "SELECT DISTINCT court FROM Petitions WHERE court IS NOT NULL ORDER BY court")
     updateSelectInput(session, "court_type",
-                     choices = c('All' = 'all', setNames(courts$court_name, courts$court_name)))
+                     choices = c('All' = 'all', setNames(courts$court, courts$court)))
   })
-  
+
+  # Populate result choices dynamically
+  observe({
+    results <- dbGetQuery(conn, "SELECT DISTINCT result FROM Result ORDER BY result")
+    updateSelectInput(session, "result_type",
+                     choices = c('All' = 'all', setNames(results$result, results$result)))
+  })
+
   # Function to get map data based on active filters
   get_map_data <- function() {
     if (is.null(input$year_range)) return(NULL)
@@ -186,6 +200,10 @@ server <- function(input, output, session) {
     if ('court' %in% input$active_filters && input$court_type != 'all') {
       where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
     }
+
+    if ('result' %in% input$active_filters && input$result_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("res.result = '%s'", input$result_type))
+    }
     
     filter_sql <- if (length(where_clauses) > 0) {
       paste("AND", paste(where_clauses, collapse = " AND "))
@@ -198,12 +216,13 @@ server <- function(input, output, session) {
       SELECT 
         g.*,
         COUNT(DISTINCT p.petition_id) as value,
-        GROUP_CONCAT(DISTINCT c.court_name) as courts
+        p.court as courts,
+        GROUP_CONCAT(DISTINCT res.result) as results
       FROM Geolocations g
       INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
-      LEFT JOIN Court c ON p.court_id = c.court_id
       LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
       LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+      LEFT JOIN Result res ON p.petition_id = res.petition_id
       WHERE 1=1 
       AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
       %s
@@ -264,6 +283,7 @@ server <- function(input, output, session) {
           "<b>", county, ", ", state, "</b><br>",
           "Total Petitions: ", value, "<br>",
           "Courts: ", courts, "<br>",
+          "Results: ", results, "<br>",
           "<hr style='margin: 5px 0;'>",
           "Click for more details below"
         )
@@ -390,6 +410,10 @@ server <- function(input, output, session) {
     if ('court' %in% input$active_filters && input$court_type != 'all') {
       where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
     }
+
+    if ('result' %in% input$active_filters && input$result_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("res.result = '%s'", input$result_type))
+    }
     
     filter_sql <- if (length(where_clauses) > 0) {
       paste("AND", paste(where_clauses, collapse = " AND "))
@@ -406,11 +430,12 @@ server <- function(input, output, session) {
         p.state,
         GROUP_CONCAT(DISTINCT r.reasoning) as reasoning_list,
         GROUP_CONCAT(DISTINCT r.party_accused) as party_accused,
-        c.court_name
+        p.court as court_name,
+        GROUP_CONCAT(DISTINCT res.result) as result
       FROM Petitions p
-      LEFT JOIN Court c ON p.court_id = c.court_id
       LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
       LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+      LEFT JOIN Result res ON p.petition_id = res.petition_id
       WHERE 1=1 
       AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
       %s
@@ -427,7 +452,7 @@ server <- function(input, output, session) {
     if (is.null(data)) return(NULL)
     
     # Rename columns for display
-    colnames(data) <- c("Petition ID", "Year", "County", "State", "Reasoning", "Party Accused", "Court")
+    colnames(data) <- c("Petition ID", "Year", "County", "State", "Reasoning", "Party Accused", "Court", "Result")
     
     datatable(data,
               options = list(
