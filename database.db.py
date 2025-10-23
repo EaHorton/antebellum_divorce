@@ -35,6 +35,7 @@ for idx, row in enumerate(rows, 1):
         row['county'],
         row['state'],
         row['years_married'],
+        row.get('end_court'),
         row.get('additional_requests')
     ))
 
@@ -118,15 +119,6 @@ for row in rows:
         archive.append((archive_id_counter, arch))
         archive_id_counter += 1
 
-# --- Court Table ---
-court_set = set()
-court = []
-for row in rows:
-    key = (row['end_court'], row['county'], row['state'])
-    if key not in court_set:
-        court_set.add(key)
-        court.append(key)
-
 # --- Additional Requests Table ---
 addreq_set = set()
 addreq = []
@@ -159,6 +151,7 @@ c.execute('''CREATE TABLE Petitions (
     county TEXT,
     state TEXT,
     years_married TEXT,
+    court TEXT,
     additional_requests_id INTEGER,
     FOREIGN KEY(additional_requests_id) REFERENCES Additional_Requests(additional_requests_id)
 )''')
@@ -185,20 +178,14 @@ c.execute('''CREATE TABLE Archive_Lookup (
     archive_id INTEGER PRIMARY KEY,
     archive TEXT
 )''')
-c.execute('''CREATE TABLE Court (
-    court TEXT,
-    county TEXT,
-    state TEXT
-)''')
 c.execute('''CREATE TABLE Additional_Requests (
     additional_requests_id INTEGER PRIMARY KEY AUTOINCREMENT,
     additional_requests TEXT UNIQUE
 )''')
 
-# Insert Reasoning, Archive, Court lookup rows
+# Insert Reasoning, Archive lookup rows
 c.executemany('INSERT INTO Reasoning VALUES (?, ?)', reasoning)
 c.executemany('INSERT INTO Archive_Lookup VALUES (?, ?)', archive)
-c.executemany('INSERT INTO Court VALUES (?, ?, ?)', court)
 
 # Insert people using INSERT OR IGNORE and build a mapping from (name,status,scope) -> person_id
 person_key_to_id = {}
@@ -259,9 +246,9 @@ for pet in petitions:
             if p in addreq_text_to_id:
                 addreq_id = addreq_text_to_id[p]
                 break
-    petitions_mapped.append((pet[0], pet[1], pet[2], pet[3], pet[4], pet[5], pet[6], pet[7], pet[8], pet[9], addreq_id))
+    petitions_mapped.append((pet[0], pet[1], pet[2], pet[3], pet[4], pet[5], pet[6], pet[7], pet[8], pet[9], pet[10], addreq_id))
 
-c.executemany('INSERT INTO Petitions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', petitions_mapped)
+c.executemany('INSERT INTO Petitions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', petitions_mapped)
 
 # Insert petition_reasoning_lookup (after Petitions exist)
 c.executemany('INSERT INTO Petition_Reasoning_Lookup VALUES (?, ?)', petition_reasoning_lookup)
