@@ -46,8 +46,19 @@ for row in rows:
         term = REASONING_REPLACEMENTS.get(term, term)
         if term and term not in reasoning_set:
             reasoning_set.add(term)
+            party_accused = None
+            clean_term = term
+            
+            # Handle (M) and (F) suffixes
+            if term.endswith('(M)'):
+                party_accused = 'husband_accused'
+                clean_term = term[:-3]
+            elif term.endswith('(F)'):
+                party_accused = 'wife_accused'
+                clean_term = term[:-3]
+            
             reasoning_id_map[term] = reasoning_id_counter
-            reasoning.append((reasoning_id_counter, term))
+            reasoning.append((reasoning_id_counter, clean_term, party_accused))
             reasoning_id_counter += 1
 
 # --- Petition_Reasoning_Lookup Table ---
@@ -166,7 +177,8 @@ c.execute('''CREATE TABLE Petition_People_Lookup (
 )''')
 c.execute('''CREATE TABLE Reasoning (
     reasoning_id INTEGER PRIMARY KEY,
-    reasoning TEXT
+    reasoning TEXT,
+    party_accused TEXT
 )''')
 c.execute('''CREATE TABLE Archive_Lookup (
     archive_id INTEGER PRIMARY KEY,
@@ -178,7 +190,7 @@ c.execute('''CREATE TABLE Additional_Requests (
 )''')
 
 # Insert Reasoning, Archive lookup rows
-c.executemany('INSERT INTO Reasoning VALUES (?, ?)', reasoning)
+c.executemany('INSERT INTO Reasoning VALUES (?, ?, ?)', reasoning)
 c.executemany('INSERT INTO Archive_Lookup VALUES (?, ?)', archive)
 
 # Insert people using INSERT OR IGNORE and build a mapping from (name,status,scope) -> person_id
