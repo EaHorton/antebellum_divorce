@@ -1,6 +1,18 @@
-library(shiny)
-library(DBI)
-library(RSQLite)
+library(shiny)      # Build WHERE clause based on active filters
+    where_clauses <- c()
+    
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    }
+    
+    if ('party' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
+    }
+    
+    if ('court' %in% input$active_filters && input$court_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+    }
+    ry(RSQLite)
 library(DT)
 library(sf)
 library(leaflet)
@@ -8,7 +20,49 @@ library(leaflet.extras)
 library(viridis)
 library(bslib)
 
-# Path to the SQLite DB and boundary data (relative to repo root)
+# Path to the SQLite DB and boundary   # Function to get map data based on active filters
+  get_map_data <- function() {
+    if (is.null(input$year_range)) return(NULL)
+    
+    # Build WHERE clause for filters
+    where_clauses <- c()
+    
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    }
+    
+    if ('party' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
+    }
+    
+    if ('results' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.result) LIKE '%%%s%%'", input$result_type))
+    }
+    
+    if ('court' %in% input$active_filters && input$court_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+    }
+    
+    filter_sql <- if (length(where_clauses) > 0) {
+      paste("AND", paste(where_clauses, collapse = " AND "))
+    } else {
+      ""
+    }
+    
+    # Base query with year filter
+    base_sql <- sprintf('
+      SELECT g.*, COUNT(DISTINCT p.petition_id) as value,
+             GROUP_CONCAT(DISTINCT c.court_name) as courts,
+             GROUP_CONCAT(DISTINCT p.result) as results
+      FROM Geolocations g
+      INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
+      LEFT JOIN Court c ON p.court_id = c.court_id
+      LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+      LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+      WHERE 1=1 
+      AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+      %s
+    ', input$year_range[1], input$year_range[2], filter_sql)to repo root)
 db_path <- file.path('..', 'dv_petitions.db')
 states_geojson <- file.path('..', 'data', 'boundaries', 'states_1860.geojson')
 
@@ -84,6 +138,8 @@ ui <- fluidPage(
                    ))
       ),
       
+      # Note: Result filtering temporarily disabled until column is added to database
+      
       conditionalPanel(
         condition = "input.active_filters.includes('court')",
         selectInput('court_type', 'Court Type',
@@ -120,9 +176,9 @@ ui <- fluidPage(
                 conditionalPanel(
                   condition = "input.active_filters && input.active_filters.length > 0",
                   div(class = "results-panel",
-                      h3("Filtered Results", class = "title-panel", style = "font-size: 1.5rem; margin-top: 0;"),
-                      DTOutput("filtered_results_table"),
-                      downloadButton('download_filtered_csv', 'Download Filtered Results')
+                    h3("Filtered Results", class = "title-panel", style = "font-size: 1.5rem; margin-top: 0;"),
+                    DTOutput("filtered_results_table"),
+                    downloadButton('download_filtered_csv', 'Download Filtered Results')
                   )
                 )),
         tabPanel("All Petitions", 
@@ -172,7 +228,19 @@ server <- function(input, output, session) {
   get_map_data <- function() {
     if (is.null(input$year_range)) return(NULL)
     
-    # Build WHERE clause for filters
+    # Base query with year filter
+    base_sql <- sprintf('
+      SELECT g.*, COUNT(DISTINCT p.petition_id) as value
+      FROM Geolocations g
+      INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
+      LEFT JOIN Court c ON p.court_id = c.court_id
+      LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+      LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+      WHERE 1=1 
+      AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+    ', input$year_range[1], input$year_range[2])
+    
+    # Build WHERE clause based on active filters
     where_clauses <- c()
     
     if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
@@ -183,32 +251,19 @@ server <- function(input, output, session) {
       where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
     }
     
-    if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+    if ('results' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.result) LIKE '%%%s%%'", input$result_type))
     }
     
-    filter_sql <- if (length(where_clauses) > 0) {
+    # Combine all conditions
+    where_clause <- if (length(where_clauses) > 0) {
       paste("AND", paste(where_clauses, collapse = " AND "))
     } else {
       ""
     }
     
-    # Base query with year filter and joined tables
-    sql <- sprintf('
-      SELECT 
-        g.*,
-        COUNT(DISTINCT p.petition_id) as value,
-        GROUP_CONCAT(DISTINCT c.court_name) as courts
-      FROM Geolocations g
-      INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
-      LEFT JOIN Court c ON p.court_id = c.court_id
-      LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
-      LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-      WHERE 1=1 
-      AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
-      %s
-      GROUP BY g.state, g.county, g.latitude, g.longitude
-    ', input$year_range[1], input$year_range[2], filter_sql)
+    # Complete query
+    sql <- paste0(base_sql, where_clause, " GROUP BY g.state, g.county, g.latitude, g.longitude")
     
     dbGetQuery(conn, sql)
   }
@@ -263,7 +318,9 @@ server <- function(input, output, session) {
         popup = ~paste0(
           "<b>", county, ", ", state, "</b><br>",
           "Total Petitions: ", value, "<br>",
+          "<hr style='margin: 5px 0;'>",
           "Courts: ", courts, "<br>",
+          "Results: ", results, "<br>",
           "<hr style='margin: 5px 0;'>",
           "Click for more details below"
         )
@@ -286,96 +343,7 @@ server <- function(input, output, session) {
       )))
     }
     
-    # Format data for display
-    stats <- data[c("county", "state", "value", "courts")]
-    stats <- stats[order(-stats$value),]
-    stats <- stats[stats$value > 0,]  # Only show counties with data
-    
-    # Build title based on active filters
-    title_parts <- c()
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      title_parts <- c(title_parts, sprintf("Reasoning: %s", input$reasoning_type))
-    }
-    if ('party' %in% input$active_filters) {
-      title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
-    }
-    if ('court' %in% input$active_filters && input$court_type != 'all') {
-      title_parts <- c(title_parts, sprintf("Court: %s", input$court_type))
-    }
-    
-    filter_text <- if (length(title_parts) > 0) {
-      paste0(" (", paste(title_parts, collapse = ", "), ")")
-    } else {
-      ""
-    }
-    
-    colnames(stats) <- c(
-      "County",
-      "State",
-      sprintf("Petitions %d-%d%s", input$year_range[1], input$year_range[2], filter_text),
-      "Courts")
-    
-    datatable(stats,
-              options = list(
-                pageLength = 10,
-                order = list(list(2, 'desc')),
-                dom = 'Bfrtip'
-              ),
-              class = 'cell-border stripe',
-              style = 'bootstrap')
-  })
-  
-  # Auto-load data on startup
-  observeEvent(input$refresh, {
-    filter_col <- input$filter_col
-    filter_val <- input$filter_val
-    sql <- 'SELECT p.*, GROUP_CONCAT(r.reasoning, ", ") as reasoning
-            FROM Petitions p
-            LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
-            LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-            LEFT JOIN Court c ON p.court_id = c.court_id'
-    
-    has_filter <- FALSE
-    if (nzchar(filter_col) && nzchar(filter_val)) {
-      if (!grepl('^[A-Za-z0-9_]+$', filter_col)) {
-        showNotification('Invalid filter column name', type='error')
-        return()
-      }
-      sql <- paste0(sql, ' WHERE p.', filter_col, ' = ?')
-      has_filter <- TRUE
-    }
-    sql <- paste0(sql, ' GROUP BY p.petition_id LIMIT ', as.integer(input$nrows))
-    
-    res <- tryCatch({
-      if (has_filter) {
-        dbGetQuery(conn, sql, params = list(filter_val))
-      } else {
-        dbGetQuery(conn, sql)
-      }
-    }, error = function(e) {
-      showNotification(paste('Query error:', e$message), type='error')
-      return(NULL)
-    })
-    query_data(res)
-  })
-  
-  output$petitions_table <- renderDT({
-    df <- query_data()
-    if (is.null(df)) return(NULL)
-    datatable(df, options = list(pageLength = input$nrows, scrollX = TRUE))
-  })
-  
-  output$download_csv <- downloadHandler(
-    filename = function() paste0('petitions_', Sys.Date(), '.csv'),
-    content = function(file) {
-      write.csv(query_data(), file, row.names = FALSE)
-    }
-  )
-  
-  # Function to get filtered results data
-  get_filtered_results <- function() {
-    if (is.null(input$year_range)) return(NULL)
-    
+    # Get detailed stats for each location
     # Build WHERE clause for filters
     where_clauses <- c()
     
@@ -385,6 +353,10 @@ server <- function(input, output, session) {
     
     if ('party' %in% input$active_filters) {
       where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
+    }
+    
+    if ('results' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.result) LIKE '%%%s%%'", input$result_type))
     }
     
     if ('court' %in% input$active_filters && input$court_type != 'all') {
@@ -397,8 +369,117 @@ server <- function(input, output, session) {
       ""
     }
     
+    location_details <- dbGetQuery(conn, sprintf("
+      WITH location_stats AS (
+        SELECT 
+          g.county,
+          g.state,
+          COUNT(DISTINCT p.petition_id) as total_petitions,
+          GROUP_CONCAT(DISTINCT c.court_name) as courts,
+          GROUP_CONCAT(DISTINCT p.result) as results
+        FROM Geolocations g
+        INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
+        LEFT JOIN Court c ON p.court_id = c.court_id
+        LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+        LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+        WHERE 1=1 
+        AND CAST(COALESCE(p.year, '0') AS INTEGER) BETWEEN %d AND %d
+        %s
+        GROUP BY g.county, g.state
+      )
+      SELECT * FROM location_stats ORDER BY total_petitions DESC
+    ", input$year_range[1], input$year_range[2], filter_sql))
+    
+    # Format data for display
+    stats <- location_details
+    stats <- stats[stats$total_petitions > 0,]  # Only show counties with data
+    
+    # Build title based on active filters
+    title_parts <- c()
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      title_parts <- c(title_parts, sprintf("Reasoning: %s", input$reasoning_type))
+    }
+    if ('party' %in% input$active_filters) {
+      title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
+    }
+    if ('results' %in% input$active_filters) {
+      title_parts <- c(title_parts, sprintf("Result: %s", input$result_type))
+    }
+    
+    filter_text <- if (length(title_parts) > 0) {
+      paste0(" (", paste(title_parts, collapse = ", "), ")")
+    } else {
+      ""
+    }
+    
+    colnames(stats) <- c(
+      "County",
+      "State",
+      sprintf("Petitions %d-%d%s", input$year_range[1], input$year_range[2], filter_text),
+      "Courts",
+      "Results")
+    
+    datatable(stats,
+              options = list(
+                pageLength = 10,
+                order = list(list(2, 'desc')),
+                dom = 'Bfrtip'
+              ),
+              class = 'cell-border stripe',
+              style = 'bootstrap')
+  })
+
+  observeEvent(input$refresh, {
+    # build query with optional filter - include reasoning via LEFT JOIN
+    filter_col <- input$filter_col
+    filter_val <- input$filter_val
+    sql <- 'SELECT p.*, GROUP_CONCAT(r.reasoning, ", ") as reasoning
+            FROM Petitions p
+            LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+            LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id'
+    has_filter <- FALSE
+    if (nzchar(filter_col) && nzchar(filter_val)) {
+      # basic validation: allow only alphanum + underscore
+      if (!grepl('^[A-Za-z0-9_]+$', filter_col)) {
+        showNotification('Invalid filter column name', type='error')
+        return()
+      }
+      sql <- paste0(sql, ' WHERE p.', filter_col, ' = ?')
+      has_filter <- TRUE
+    }
+    sql <- paste0(sql, ' GROUP BY p.petition_id LIMIT ', as.integer(input$nrows))
+    res <- tryCatch({
+      if (has_filter) {
+        dbGetQuery(conn, sql, params = list(filter_val))
+      } else {
+        dbGetQuery(conn, sql)
+      }
+    }, error = function(e) {
+      showNotification(paste('Query error:', e$message), type='error')
+      return(NULL)
+    })
+    query_data(res)
+  })
+
+  output$petitions_table <- renderDT({
+    df <- query_data()
+    if (is.null(df)) return(NULL)
+    datatable(df, options = list(pageLength = input$nrows, scrollX = TRUE))
+  })
+
+  output$download_csv <- downloadHandler(
+    filename = function() paste0('petitions_', Sys.Date(), '.csv'),
+    content = function(file) {
+      write.csv(query_data(), file, row.names = FALSE)
+    }
+  )
+
+  # Function to get filtered results data
+  get_filtered_results <- function() {
+    if (is.null(input$year_range)) return(NULL)
+    
     # Base query with year filter
-    sql <- sprintf('
+    base_sql <- sprintf('
       SELECT DISTINCT
         p.petition_id,
         p.year,
@@ -411,12 +492,34 @@ server <- function(input, output, session) {
       LEFT JOIN Court c ON p.court_id = c.court_id
       LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
       LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-      WHERE 1=1 
+      WHERE p.petition_id IS NOT NULL 
       AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
-      %s
-      GROUP BY p.petition_id 
-      ORDER BY p.year, p.state, p.county
-    ', input$year_range[1], input$year_range[2], filter_sql)
+    ', input$year_range[1], input$year_range[2])
+    
+    # Build WHERE clause based on active filters
+    where_clauses <- c()
+    
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    }
+    
+    if ('party' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
+    }
+    
+    if ('results' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.result) LIKE '%%%s%%'", input$result_type))
+    }
+    
+    # Combine all conditions
+    where_clause <- if (length(where_clauses) > 0) {
+      paste("AND", paste(where_clauses, collapse = " AND "))
+    } else {
+      ""
+    }
+    
+    # Complete query
+    sql <- paste0(base_sql, where_clause, " GROUP BY p.petition_id ORDER BY p.year, p.state, p.county")
     
     dbGetQuery(conn, sql)
   }
@@ -449,6 +552,39 @@ server <- function(input, output, session) {
       write.csv(get_filtered_results(), file, row.names = FALSE)
     }
   )
+
+  # Auto-load data on startup
+  observeEvent(TRUE, {
+    # build query with optional filter - include reasoning via LEFT JOIN
+    filter_col <- input$filter_col
+    filter_val <- input$filter_val
+    sql <- 'SELECT p.*, GROUP_CONCAT(r.reasoning, ", ") as reasoning
+            FROM Petitions p
+            LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+            LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id'
+    has_filter <- FALSE
+    if (nzchar(filter_col) && nzchar(filter_val)) {
+      # basic validation: allow only alphanum + underscore
+      if (!grepl('^[A-Za-z0-9_]+$', filter_col)) {
+        showNotification('Invalid filter column name', type='error')
+        return()
+      }
+      sql <- paste0(sql, ' WHERE p.', filter_col, ' = ?')
+      has_filter <- TRUE
+    }
+    sql <- paste0(sql, ' GROUP BY p.petition_id LIMIT ', as.integer(input$nrows))
+    res <- tryCatch({
+      if (has_filter) {
+        dbGetQuery(conn, sql, params = list(filter_val))
+      } else {
+        dbGetQuery(conn, sql)
+      }
+    }, error = function(e) {
+      showNotification(paste('Query error:', e$message), type='error')
+      return(NULL)
+    })
+    query_data(res)
+  }, once = TRUE, ignoreNULL = FALSE)
 }
 
 shinyApp(ui, server)

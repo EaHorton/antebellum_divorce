@@ -1,0 +1,39 @@
+# Add this after the connection initialization:
+
+# Initialize court choices
+observe({
+  # Get all unique courts from the Court table
+  courts <- dbGetQuery(conn, "SELECT court_name FROM Court ORDER BY court_name")
+  updateSelectInput(session, "court_type",
+                   choices = c('All' = 'all',
+                             setNames(courts$court_name, courts$court_name)))
+})
+
+# Update the title parts in the county stats section to include court:
+if ('court' %in% input$active_filters && input$court_type != 'all') {
+  title_parts <- c(title_parts, sprintf("Court: %s", input$court_type))
+}
+
+# Add these filters to both the map data query and the filtered results query:
+if ('court' %in% input$active_filters && input$court_type != 'all') {
+  where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+}
+
+# Update base SQL to include court join:
+base_sql <- sprintf('
+  SELECT DISTINCT
+    p.petition_id,
+    p.year,
+    p.county,
+    p.state,
+    GROUP_CONCAT(DISTINCT r.reasoning) as reasoning_list,
+    GROUP_CONCAT(DISTINCT r.party_accused) as party_accused,
+    p.result,
+    c.court_name
+  FROM Petitions p
+  LEFT JOIN Court c ON p.court_id = c.court_id
+  LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+  LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+  WHERE p.petition_id IS NOT NULL 
+  AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+', input$year_range[1], input$year_range[2])
