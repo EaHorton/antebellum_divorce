@@ -217,7 +217,8 @@ server <- function(input, output, session) {
         g.*,
         COUNT(DISTINCT p.petition_id) as value,
         p.court as courts,
-        GROUP_CONCAT(DISTINCT res.result) as results
+        GROUP_CONCAT(DISTINCT res.result) as results,
+        GROUP_CONCAT(DISTINCT p.year) as years
       FROM Geolocations g
       INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
       LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
@@ -282,6 +283,7 @@ server <- function(input, output, session) {
         popup = ~paste0(
           "<b>", county, ", ", state, "</b><br>",
           "Total Petitions: ", value, "<br>",
+          "Years: ", years, "<br>",
           "Courts: ", courts, "<br>",
           "Results: ", results, "<br>",
           "<hr style='margin: 5px 0;'>",
