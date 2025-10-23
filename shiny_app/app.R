@@ -51,22 +51,22 @@ ui <- fluidPage(
   
   sidebarLayout(
     sidebarPanel(
-      selectInput('viz_type', 'Visualization Type', 
-                 choices = c(
-                   'Petition Count' = 'count',
-                   'Reasoning Analysis' = 'reasoning',
-                   'Party Accused' = 'party',
-                   'Results' = 'results'
-                 )),
+      # Filter controls
+      checkboxGroupInput('active_filters', 'Select Filters to Apply:',
+                        choices = c(
+                          'Reasoning' = 'reasoning',
+                          'Party Accused' = 'party',
+                          'Petition Result' = 'results'
+                        )),
       
       conditionalPanel(
-        condition = "input.viz_type == 'reasoning'",
+        condition = "input.active_filters.includes('reasoning')",
         selectInput('reasoning_type', 'Reasoning Category',
                    choices = c('All' = 'all'))  # Will be populated dynamically
       ),
       
       conditionalPanel(
-        condition = "input.viz_type == 'party'",
+        condition = "input.active_filters.includes('party')",
         selectInput('party_type', 'Party Accused',
                    choices = c(
                      'Husband Accused' = 'husband_accused',
@@ -75,7 +75,7 @@ ui <- fluidPage(
       ),
       
       conditionalPanel(
-        condition = "input.viz_type == 'results'",
+        condition = "input.active_filters.includes('results')",
         selectInput('result_type', 'Petition Result',
                    choices = c(
                      'Granted' = 'granted',
@@ -144,45 +144,45 @@ server <- function(input, output, session) {
                      choices = c('All' = 'all', setNames(reasons$reasoning, reasons$reasoning)))
   })
   
-  # Function to get map data based on visualization type
+  # Function to get map data based on active filters
   get_map_data <- function() {
     if (is.null(input$year_range)) return(NULL)
-    year_filter <- sprintf("AND CAST(COALESCE(p.year, '0') AS INTEGER) BETWEEN %d AND %d", input$year_range[1], input$year_range[2])
     
-    sql <- switch(input$viz_type,
-      "count" = sprintf('
-        SELECT g.*, COUNT(p.petition_id) as value
-        FROM Geolocations g
-        LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
-        WHERE p.petition_id IS NOT NULL %s
-        GROUP BY g.county, g.state
-      ', year_filter),
-      "reasoning" = sprintf('
-        SELECT g.*, COUNT(p.petition_id) as value
-        FROM Geolocations g
-        LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
-        LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
-        LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-        WHERE p.petition_id IS NOT NULL %s AND %s
-        GROUP BY g.county, g.state
-      ', year_filter, if(input$reasoning_type == 'all') '1=1' else sprintf("r.reasoning = '%s'", input$reasoning_type)),
-      "party" = sprintf('
-        SELECT g.*, COUNT(p.petition_id) as value
-        FROM Geolocations g
-        LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
-        LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
-        LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-        WHERE p.petition_id IS NOT NULL %s AND r.party_accused = "%s"
-        GROUP BY g.county, g.state
-      ', year_filter, input$party_type),
-      "results" = sprintf('
-        SELECT g.*, COUNT(p.petition_id) as value
-        FROM Geolocations g
-        LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
-        WHERE p.petition_id IS NOT NULL %s AND LOWER(p.result) LIKE "%%%s%%"
-        GROUP BY g.county, g.state
-      ', year_filter, input$result_type)
-    )
+    # Base query with year filter
+    base_sql <- sprintf('
+      SELECT g.*, COUNT(DISTINCT p.petition_id) as value
+      FROM Geolocations g
+      LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
+      LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+      LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+      WHERE p.petition_id IS NOT NULL 
+      AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+    ', input$year_range[1], input$year_range[2])
+    
+    # Build WHERE clause based on active filters
+    where_clauses <- c()
+    
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    }
+    
+    if ('party' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
+    }
+    
+    if ('results' %in% input$active_filters) {
+      where_clauses <- c(where_clauses, sprintf("LOWER(p.petition_result) LIKE '%%%s%%'", input$result_type))
+    }
+    
+    # Combine all conditions
+    where_clause <- if (length(where_clauses) > 0) {
+      paste("AND", paste(where_clauses, collapse = " AND "))
+    } else {
+      ""
+    }
+    
+    # Complete query
+    sql <- paste0(base_sql, where_clause, " GROUP BY g.county, g.state")
     
     dbGetQuery(conn, sql)
   }
@@ -261,7 +261,29 @@ server <- function(input, output, session) {
     stats <- data[c("county", "state", "value")]
     stats <- stats[order(-stats$value),]
     stats <- stats[stats$value > 0,]  # Only show counties with data
-    colnames(stats) <- c("County", "State", sprintf("Count (%d-%d)", input$year_range[1], input$year_range[2]))
+    
+    # Build title based on active filters
+    title_parts <- c()
+    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
+      title_parts <- c(title_parts, sprintf("Reasoning: %s", input$reasoning_type))
+    }
+    if ('party' %in% input$active_filters) {
+      title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
+    }
+    if ('results' %in% input$active_filters) {
+      title_parts <- c(title_parts, sprintf("Result: %s", input$result_type))
+    }
+    
+    filter_text <- if (length(title_parts) > 0) {
+      paste0(" (", paste(title_parts, collapse = ", "), ")")
+    } else {
+      ""
+    }
+    
+    colnames(stats) <- c("County", "State", sprintf("Count %d-%d%s", 
+                                                   input$year_range[1], 
+                                                   input$year_range[2],
+                                                   filter_text))
     
     datatable(stats,
               options = list(
