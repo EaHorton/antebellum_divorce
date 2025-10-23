@@ -16,7 +16,12 @@ REASONING_REPLACEMENTS = {
     'possible_prostitution(F)': 'possible_sex_work(F)',
     'allowed_prostitution_in_his_home(M)': 'allowed_sex_work_in_home(M)',
     'sex_with_prostitutes(M)': 'sex_with_sex_workers(M)',
-    'adultery_with_prostitutes(M)': 'adultery_with_sex_workers(M)'
+    'adultery_with_prostitutes(M)': 'adultery_with_sex_workers(M)',
+    'birth_mulatto_children(F)': 'birth_mixed_race_children(F)',
+    'birth_mulatto_child(F)': 'birth_mixed_race_child(F)',
+    'father_mulatto_child(M)': 'father_mixed_race_child(M)',
+    'father_mulatto_children(M)': 'father_mixed_race_children(M)',
+    'homosexual(M)': 'same_sex_attraction(M)'
 }
 
 # Read CSV and clean whitespace from headers and cells
@@ -28,26 +33,6 @@ with open(CSV_PATH, newline='', encoding='utf-8') as csvfile:
     for row in reader:
         clean_row = {k.strip(): v.strip() for k, v in row.items()}
         rows.append(clean_row)
-
-# --- Petitions Table ---
-petitions = []
-petition_id_map = {}
-for idx, row in enumerate(rows, 1):
-    petition_id_map[row['parcel_number']] = idx
-    petitions.append((
-        idx,
-        row['parcel_number'],
-        row['archive'],
-        row['petitioner'],
-        row['defendant'],
-        row['month'],
-        row['year'],
-        row['county'],
-        row['state'],
-        row['years_married'],
-        row.get('end_court'),
-        row.get('additional_requests')
-    ))
 
 # --- Reasoning Table ---
 reasoning_set = set()
@@ -76,11 +61,18 @@ for idx, row in enumerate(rows, 1):
         if reasoning_id:
             petition_reasoning_lookup.append((idx, reasoning_id))
 
-# --- People Table ---
+# --- Initialize data structures for People and Petitions ---
 people_set = set()
 people = []
 person_id_map = {}
 person_id_counter = 1
+petition_id_map = {}
+
+# First create petition_id_map since it's needed for lookups
+for idx, row in enumerate(rows, 1):
+    petition_id_map[row['parcel_number']] = idx
+
+# Now process people
 for row in rows:
     enslaver_status = row.get('enslaver_status', '')
     enslaver_scope = row.get('enslaver_scope_estimate', '')
@@ -144,8 +136,6 @@ c.execute('''CREATE TABLE Petitions (
     petition_id INTEGER PRIMARY KEY,
     parcel_number TEXT,
     archive TEXT,
-    petitioner TEXT,
-    defendant TEXT,
     month TEXT,
     year TEXT,
     county TEXT,
@@ -153,7 +143,11 @@ c.execute('''CREATE TABLE Petitions (
     years_married TEXT,
     court TEXT,
     additional_requests_id INTEGER,
-    FOREIGN KEY(additional_requests_id) REFERENCES Additional_Requests(additional_requests_id)
+    petitioner_id INTEGER,
+    defendant_id INTEGER,
+    FOREIGN KEY(additional_requests_id) REFERENCES Additional_Requests(additional_requests_id),
+    FOREIGN KEY(petitioner_id) REFERENCES People(person_id),
+    FOREIGN KEY(defendant_id) REFERENCES People(person_id)
 )''')
 c.execute('''CREATE TABLE Petition_Reasoning_Lookup (
     petition_id INTEGER,
@@ -235,10 +229,21 @@ for aid, text in c.execute('SELECT additional_requests_id, additional_requests F
         addreq_text_to_id[text.lower()] = aid
 
 
-# Now insert Petitions with mapped additional_requests_id
-petitions_mapped = []
-for pet in petitions:
-    addreq_text = pet[-1]
+# Create Petitions entries with person IDs and additional_requests_id
+petitions = []
+petition_id_map = {}
+for idx, row in enumerate(rows, 1):
+    petition_id_map[row['parcel_number']] = idx
+    
+    # Look up person_ids for petitioner and defendant
+    petitioner_key = (row['petitioner'], row.get('enslaver_status', ''), row.get('enslaver_scope_estimate', ''))
+    defendant_key = (row['defendant'], row.get('enslaver_status', ''), row.get('enslaver_scope_estimate', ''))
+    
+    petitioner_id = person_key_to_id.get(petitioner_key)
+    defendant_id = person_key_to_id.get(defendant_key)
+
+    # Get additional_requests_id
+    addreq_text = row.get('additional_requests')
     addreq_id = None
     if addreq_text and isinstance(addreq_text, str):
         parts = [p.strip().lower() for p in addreq_text.split(',') if p.strip()]
@@ -246,9 +251,23 @@ for pet in petitions:
             if p in addreq_text_to_id:
                 addreq_id = addreq_text_to_id[p]
                 break
-    petitions_mapped.append((pet[0], pet[1], pet[2], pet[3], pet[4], pet[5], pet[6], pet[7], pet[8], pet[9], pet[10], addreq_id))
+    
+    petitions.append((
+        idx,
+        row['parcel_number'],
+        row['archive'],
+        row['month'],
+        row['year'],
+        row['county'],
+        row['state'],
+        row['years_married'],
+        row.get('end_court'),
+        addreq_id,
+        petitioner_id,
+        defendant_id
+    ))
 
-c.executemany('INSERT INTO Petitions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', petitions_mapped)
+c.executemany('INSERT INTO Petitions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', petitions)
 
 # Insert petition_reasoning_lookup (after Petitions exist)
 c.executemany('INSERT INTO Petition_Reasoning_Lookup VALUES (?, ?)', petition_reasoning_lookup)
