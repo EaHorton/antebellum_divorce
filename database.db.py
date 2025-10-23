@@ -188,6 +188,14 @@ c.execute('''CREATE TABLE Additional_Requests (
     additional_requests_id INTEGER PRIMARY KEY AUTOINCREMENT,
     additional_requests TEXT UNIQUE
 )''')
+c.execute('''CREATE TABLE Geolocations (
+    geolocation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    county TEXT,
+    state TEXT,
+    latitude REAL,
+    longitude REAL,
+    UNIQUE(county, state)
+)''')
 
 # Insert Reasoning, Archive lookup rows
 c.executemany('INSERT INTO Reasoning VALUES (?, ?, ?)', reasoning)
@@ -460,6 +468,11 @@ def main():
     # Default behavior: run people migration after building the DB so split names are applied.
     print('Running people migration by default (use --no-migrate to skip)')
     migrate_people_inplace(DB_PATH)
+    
+    # Run geocoding script to populate Geolocations table
+    print('Geocoding counties...')
+    import geocode_counties
+    geocode_counties.main()
 
 
 if __name__ == '__main__':
