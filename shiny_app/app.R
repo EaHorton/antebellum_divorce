@@ -51,6 +51,16 @@ ui <- fluidPage(
       
       hr(),
       
+      # Time range slider
+      sliderInput("year_range", "Year Range:",
+                 min = 1800, max = 1860,
+                 value = c(1800, 1860),
+                 step = 1,
+                 sep = "",
+                 animate = TRUE),
+      
+      hr(),
+      
       # Original table controls
       textInput('filter_col', 'Filter table column (optional)', value=''),
       textInput('filter_val', 'Filter value (optional)', value=''),
@@ -80,6 +90,15 @@ server <- function(input, output, session) {
   # Load states boundary data
   states <- st_read(states_geojson, quiet = TRUE)
   
+  # Initialize year range based on data
+  observe({
+    years <- dbGetQuery(conn, "SELECT MAX(CAST(year AS INTEGER)) as max_year FROM Petitions")
+    updateSliderInput(session, "year_range",
+                     min = 1800,
+                     max = max(years$max_year, 1860),
+                     value = c(1800, max(years$max_year, 1860)))
+  })
+  
   # Initialize reactive values
   query_data <- reactiveVal(NULL)
   map_data <- reactiveVal(NULL)
@@ -93,38 +112,41 @@ server <- function(input, output, session) {
   
   # Function to get map data based on visualization type
   get_map_data <- function() {
+    year_filter <- sprintf("AND CAST(p.year AS INTEGER) BETWEEN %d AND %d", input$year_range[1], input$year_range[2])
+    
     sql <- switch(input$viz_type,
-      "count" = '
+      "count" = sprintf('
         SELECT g.*, COUNT(p.petition_id) as value
         FROM Geolocations g
         LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
+        WHERE p.petition_id IS NOT NULL %s
         GROUP BY g.county, g.state
-      ',
+      ', year_filter),
       "reasoning" = sprintf('
         SELECT g.*, COUNT(p.petition_id) as value
         FROM Geolocations g
         LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
         LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
         LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-        WHERE %s
+        WHERE p.petition_id IS NOT NULL %s AND %s
         GROUP BY g.county, g.state
-      ', if(input$reasoning_type == 'all') '1=1' else sprintf("r.reasoning = '%s'", input$reasoning_type)),
+      ', year_filter, if(input$reasoning_type == 'all') '1=1' else sprintf("r.reasoning = '%s'", input$reasoning_type)),
       "party" = sprintf('
         SELECT g.*, COUNT(p.petition_id) as value
         FROM Geolocations g
         LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
         LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
         LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-        WHERE r.party_accused = "%s"
+        WHERE p.petition_id IS NOT NULL %s AND r.party_accused = "%s"
         GROUP BY g.county, g.state
-      ', input$party_type),
+      ', year_filter, input$party_type),
       "results" = sprintf('
         SELECT g.*, COUNT(p.petition_id) as value
         FROM Geolocations g
         LEFT JOIN Petitions p ON g.county = p.county AND g.state = p.state
-        WHERE LOWER(p.result) LIKE "%%%s%%"
+        WHERE p.petition_id IS NOT NULL %s AND LOWER(p.result) LIKE "%%%s%%"
         GROUP BY g.county, g.state
-      ', input$result_type)
+      ', year_filter, input$result_type)
     )
     
     dbGetQuery(conn, sql)
@@ -187,7 +209,7 @@ server <- function(input, output, session) {
     # Format data for display
     stats <- data[c("county", "state", "value")]
     stats <- stats[order(-stats$value),]
-    colnames(stats) <- c("County", "State", "Count")
+    colnames(stats) <- c("County", "State", sprintf("Count (%d-%d)", input$year_range[1], input$year_range[2]))
     
     datatable(stats,
               options = list(pageLength = 10,
