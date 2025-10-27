@@ -201,7 +201,7 @@ server <- function(input, output, session) {
     }
     
     if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+      where_clauses <- c(where_clauses, sprintf("p.court = '%s'", input$court_type))
     }
 
     if ('result' %in% input$active_filters && input$result_type != 'all') {
@@ -417,7 +417,7 @@ server <- function(input, output, session) {
     }
     
     if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+      where_clauses <- c(where_clauses, sprintf("p.court = '%s'", input$court_type))
     }
 
     if ('result' %in% input$active_filters && input$result_type != 'all') {
