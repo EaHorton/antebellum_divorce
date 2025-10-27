@@ -89,14 +89,18 @@ ui <- fluidPage(
       
       conditionalPanel(
         condition = "input.active_filters.includes('court')",
-        selectInput('court_type', 'Court Type',
-                   choices = c('All' = 'all'))  # Will be populated dynamically
+        selectizeInput('court_type', 'Court Type',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select courts'))  # Will be populated dynamically
       ),
 
       conditionalPanel(
         condition = "input.active_filters.includes('result')",
-        selectInput('result_type', 'Petition Result',
-                   choices = c('All' = 'all'))  # Will be populated dynamically
+        selectizeInput('result_type', 'Petition Result',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select results'))  # Will be populated dynamically
       ),
       
       hr(),
@@ -200,12 +204,14 @@ server <- function(input, output, session) {
       where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
     }
     
-    if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("p.court = '%s'", input$court_type))
+    if ('court' %in% input$active_filters && length(input$court_type) > 0 && !('all' %in% input$court_type)) {
+      court_conditions <- paste(sprintf("p.court = '%s'", input$court_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", court_conditions, ")"))
     }
 
-    if ('result' %in% input$active_filters && input$result_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("res.result = '%s'", input$result_type))
+    if ('result' %in% input$active_filters && length(input$result_type) > 0 && !('all' %in% input$result_type)) {
+      result_conditions <- paste(sprintf("res.result = '%s'", input$result_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", result_conditions, ")"))
     }
     
     filter_sql <- if (length(where_clauses) > 0) {
@@ -416,12 +422,14 @@ server <- function(input, output, session) {
       where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
     }
     
-    if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("p.court = '%s'", input$court_type))
+    if ('court' %in% input$active_filters && length(input$court_type) > 0 && !('all' %in% input$court_type)) {
+      court_conditions <- paste(sprintf("p.court = '%s'", input$court_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", court_conditions, ")"))
     }
 
-    if ('result' %in% input$active_filters && input$result_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("res.result = '%s'", input$result_type))
+    if ('result' %in% input$active_filters && length(input$result_type) > 0 && !('all' %in% input$result_type)) {
+      result_conditions <- paste(sprintf("res.result = '%s'", input$result_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", result_conditions, ")"))
     }
     
     filter_sql <- if (length(where_clauses) > 0) {
