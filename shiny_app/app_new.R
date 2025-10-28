@@ -395,7 +395,13 @@ server <- function(input, output, session) {
                         weight = 2,
                         opacity = 0.8,
                         color = "#3498db",
-                        fillOpacity = 0.2))
+                        fillOpacity = 0.2,
+                        highlightOptions = highlightOptions(
+                          weight = 3,
+                          color = "#2c3e50",
+                          fillOpacity = 0.3,
+                          bringToFront = TRUE
+                        )))
     }
     
     # Create color palette based on values
@@ -414,7 +420,13 @@ server <- function(input, output, session) {
                  weight = 2,
                  opacity = 0.8,
                  color = "#3498db",
-                 fillOpacity = 0.2) %>%
+                 fillOpacity = 0.2,
+                 highlightOptions = highlightOptions(
+                   weight = 3,
+                   color = "#2c3e50",
+                   fillOpacity = 0.3,
+                   bringToFront = TRUE
+                 )) %>%
       addCircleMarkers(
         data = data,
         lng = ~longitude,
@@ -439,6 +451,12 @@ server <- function(input, output, session) {
           "<em>Click for more details below</em>",
           "</div>",
           "</div>"
+        ),
+        highlightOptions = highlightOptions(
+          weight = 2,
+          color = "#18bc9c",
+          fillOpacity = 1,
+          bringToFront = TRUE
         )
       ) %>%
       addLegend("bottomright",
@@ -453,7 +471,7 @@ server <- function(input, output, session) {
   # Render county statistics table
   output$county_stats <- renderDT({
     data <- map_data()
-    if (is.null(data)) {
+    if (is.null(data) || nrow(data) == 0) {
       return(datatable(data.frame(
         County = character(0),
         State = character(0),

@@ -12,69 +12,191 @@ library(bslib)
 db_path <- file.path('..', 'dv_petitions.db')
 states_geojson <- file.path('..', 'data', 'boundaries', 'states_1860.geojson')
 
+# Custom theme settings
+custom_theme <- bs_theme(
+  version = 5,
+  bootswatch = "lumen",
+  primary = "#2c3e50",
+  secondary = "#95a5a6",
+  success = "#18bc9c",
+  info = "#3498db",
+  warning = "#f39c12",
+  danger = "#e74c3c",
+  base_font = "Source Sans Pro",
+  heading_font = "Playfair Display",
+  font_scale = 1.0
+)
+
 # UI
 ui <- fluidPage(
-  theme = bs_theme(version = 5, bootswatch = "yeti"),
+  theme = custom_theme,
   tags$head(
     tags$link(
-      href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&display=swap",
+      href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Sans+Pro:wght@400;600&display=swap",
       rel = "stylesheet"
     ),
     tags$style("
       body {
-        background-color: #f5f5f0;
+        background-color: #f8f9fa;
+        color: #2c3e50;
       }
       .container-fluid {
-        background-color: #f5f5f0;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem;
       }
       .title-panel {
         font-family: 'Playfair Display', serif;
-        font-size: 2.5rem;
+        font-size: 3rem;
         font-weight: 700;
-        margin-bottom: 1.5rem;
+        text-align: center;
+        margin: 2rem 0 3rem;
         color: #2c3e50;
+        border-bottom: 3px solid #18bc9c;
+        padding-bottom: 1rem;
       }
-      .well {
+      .well, .card {
         background-color: #ffffff;
-        border: 1px solid #e3e3e3;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border: none;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
       }
       .tab-content {
         background-color: #ffffff;
-        padding: 15px;
-        border-radius: 4px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .nav-tabs {
+        border-bottom: 2px solid #e9ecef;
+        margin-bottom: 1rem;
+      }
+      .nav-tabs .nav-link {
+        color: #6c757d;
+        border: none;
+        padding: 1rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+      .nav-tabs .nav-link.active {
+        color: #18bc9c;
+        border-bottom: 3px solid #18bc9c;
+        background: none;
+      }
+      .nav-tabs .nav-link:hover {
+        color: #18bc9c;
+        border-bottom: 3px solid #18bc9c;
+        background: none;
+      }
+      .form-group {
+        margin-bottom: 1.5rem;
+      }
+      .form-label {
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 0.5rem;
+      }
+      .form-control {
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+        padding: 0.5rem 1rem;
+      }
+      .btn {
+        border-radius: 6px;
+        padding: 0.5rem 1.25rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+      }
+      .btn-primary {
+        background-color: #18bc9c;
+        border-color: #18bc9c;
+      }
+      .btn-primary:hover {
+        background-color: #159a80;
+        border-color: #159a80;
       }
       .results-panel {
-        margin-top: 20px;
-        padding: 15px;
-        border-radius: 4px;
+        margin-top: 2rem;
+        padding: 1.5rem;
+        border-radius: 8px;
         background-color: #ffffff;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .results-panel h3 {
+        color: #2c3e50;
+        margin-bottom: 1.5rem;
       }
       #download_filtered_csv {
-        margin-top: 10px;
+        margin-top: 1rem;
+      }
+      /* Leaflet custom styles */
+      .leaflet-container {
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .leaflet-popup-content {
+        font-family: 'Source Sans Pro', sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .leaflet-popup-content b {
+        color: #2c3e50;
+      }
+      /* DataTable custom styles */
+      .dataTables_wrapper {
+        padding: 1rem;
+        border-radius: 8px;
+        background-color: #ffffff;
+      }
+      .dataTables_info, .dataTables_length, .dataTables_filter {
+        font-size: 0.9rem;
+        color: #6c757d;
+      }
+      table.dataTable thead th {
+        background-color: #f8f9fa;
+        color: #2c3e50;
+        font-weight: 600;
+        border-bottom: 2px solid #e9ecef;
+      }
+      table.dataTable tbody td {
+        padding: 0.75rem;
+        vertical-align: middle;
+      }
+      /* Custom slider styles */
+      .irs--shiny .irs-bar {
+        background: #18bc9c;
+      }
+      .irs--shiny .irs-from, .irs--shiny .irs-to, .irs--shiny .irs-single {
+        background-color: #18bc9c;
+      }
+      .irs--shiny .irs-handle {
+        border-color: #18bc9c;
       }
     ")
   ),
-  tags$div(class = "title-panel", "Antebellum Divorce Petitions"),
+  tags$div(class = "title-panel", "Antebellum Divorce Petitions Database"),
   
   sidebarLayout(
     sidebarPanel(
-      # Filter controls
-      checkboxGroupInput('active_filters', 'Select Filters to Apply:',
-                        choices = c(
-                          'Reasoning' = 'reasoning',
-                          'Party Accused' = 'party',
-                          'Court Type' = 'court',
-                          'Result' = 'result'
-                        )),
+      div(class = "card",
+        h4("Filter Options", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+        # Filter controls
+        checkboxGroupInput('active_filters', 'Select Filters to Apply:',
+                          choices = c(
+                            'Reasoning' = 'reasoning',
+                            'Party Accused' = 'party',
+                            'Court Type' = 'court',
+                            'Result' = 'result'
+                          )),
       
       conditionalPanel(
         condition = "input.active_filters.includes('reasoning')",
         selectizeInput('reasoning_type', 'Reasoning Category',
                    choices = c('All' = 'all'),
-                   multiple = TRUE)  # Will be populated dynamically
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select reasons'))  # Will be populated dynamically
       ),
       
       conditionalPanel(
@@ -88,54 +210,63 @@ ui <- fluidPage(
       
       conditionalPanel(
         condition = "input.active_filters.includes('court')",
-        selectInput('court_type', 'Court Type',
-                   choices = c('All' = 'all'))  # Will be populated dynamically
+        selectizeInput('court_type', 'Court Type',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select courts'))  # Will be populated dynamically
       ),
 
       conditionalPanel(
         condition = "input.active_filters.includes('result')",
-        selectInput('result_type', 'Petition Result',
-                   choices = c('All' = 'all'))  # Will be populated dynamically
+        selectizeInput('result_type', 'Petition Result',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select results'))  # Will be populated dynamically
       ),
       
-      hr(),
+      div(class = "card mt-4",
+        h4("Time Period", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+        # Time range slider
+        sliderInput("year_range", "Year Range:",
+                   min = 1800, max = 1860,
+                   value = c(1800, 1860),
+                   step = 1,
+                   sep = "",
+                   animate = TRUE)
+      ),
       
-      # Time range slider
-      sliderInput("year_range", "Year Range:",
-                 min = 1800, max = 1860,
-                 value = c(1800, 1860),
-                 step = 1,
-                 sep = "",
-                 animate = TRUE),
-      
-      hr(),
-      
-      # Original table controls
-      textInput('filter_col', 'Filter table column (optional)', value=''),
-      textInput('filter_val', 'Filter value (optional)', value=''),
-      numericInput('nrows', 'Table rows per page', value = 50, min = 1, max = 1000),
-      actionButton('refresh', 'Refresh')
+      div(class = "card mt-4",
+        h4("Table Controls", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+        # Original table controls
+        textInput('filter_col', 'Filter Column', value='', placeholder = 'Enter column name'),
+        textInput('filter_val', 'Filter Value', value='', placeholder = 'Enter filter value'),
+        numericInput('nrows', 'Rows per Page', value = 50, min = 1, max = 1000),
+        actionButton('refresh', 'Refresh Data', class = "btn-primary w-100 mt-3"))
     ),
     
     mainPanel(
       tabsetPanel(
-        tabPanel("Map", 
-                leafletOutput("map", height = "600px"),
-                hr(),
-                DTOutput("county_stats"),
+        tabPanel("Interactive Map", 
+                div(class = "card",
+                    leafletOutput("map", height = "600px")),
+                div(class = "card mt-4",
+                    h4("County Statistics", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+                    DTOutput("county_stats")),
                 
                 # Conditional panel for filtered results
                 conditionalPanel(
                   condition = "input.active_filters && input.active_filters.length > 0",
                   div(class = "results-panel",
-                      h3("Filtered Results", class = "title-panel", style = "font-size: 1.5rem; margin-top: 0;"),
+                      h4("Filtered Results", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
                       DTOutput("filtered_results_table"),
-                      downloadButton('download_filtered_csv', 'Download Filtered Results')
+                      downloadButton('download_filtered_csv', 'Download Filtered Results', class = "btn-primary mt-3")
                   )
                 )),
-        tabPanel("All Petitions", 
-                DTOutput("petitions_table"),
-                downloadButton('download_csv', 'Download All Petitions'))
+        tabPanel("Complete Database", 
+                div(class = "card",
+                    h4("All Petitions", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+                    DTOutput("petitions_table"),
+                    downloadButton('download_csv', 'Download All Petitions', class = "btn-primary mt-3")))
       )
     )
   )
@@ -190,20 +321,23 @@ server <- function(input, output, session) {
     # Build WHERE clause for filters
     where_clauses <- c()
     
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
+      reasoning_conditions <- paste(sprintf("r.reasoning = '%s'", input$reasoning_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", reasoning_conditions, ")"))
     }
     
     if ('party' %in% input$active_filters) {
       where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
     }
     
-    if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+    if ('court' %in% input$active_filters && length(input$court_type) > 0 && !('all' %in% input$court_type)) {
+      court_conditions <- paste(sprintf("p.court = '%s'", input$court_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", court_conditions, ")"))
     }
 
-    if ('result' %in% input$active_filters && input$result_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("res.result = '%s'", input$result_type))
+    if ('result' %in% input$active_filters && length(input$result_type) > 0 && !('all' %in% input$result_type)) {
+      result_conditions <- paste(sprintf("res.result = '%s'", input$result_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", result_conditions, ")"))
     }
     
     filter_sql <- if (length(where_clauses) > 0) {
@@ -219,7 +353,8 @@ server <- function(input, output, session) {
         COUNT(DISTINCT p.petition_id) as value,
         p.court as courts,
         GROUP_CONCAT(DISTINCT res.result) as results,
-        GROUP_CONCAT(DISTINCT p.year) as years
+        GROUP_CONCAT(DISTINCT p.year) as years,
+        GROUP_CONCAT(DISTINCT r.reasoning) as reasons
       FROM Geolocations g
       INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
       LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
@@ -266,29 +401,47 @@ server <- function(input, output, session) {
       addProviderTiles(providers$CartoDB.Positron) %>%
       setView(lng = -85, lat = 34, zoom = 6) %>%
       addPolygons(data = states,
-                 fillColor = "white",
+                 fillColor = "#f8f9fa",
                  weight = 2,
-                 opacity = 1,
-                 color = "#008cba",
-                 fillOpacity = 0.1) %>%
+                 opacity = 0.8,
+                 color = "#3498db",
+                 fillOpacity = 0.2,
+                 highlightOptions = highlightOptions(
+                   weight = 3,
+                   color = "#2c3e50",
+                   fillOpacity = 0.3,
+                   bringToFront = TRUE
+                 )) %>%
       addCircleMarkers(
         data = data,
         lng = ~longitude,
         lat = ~latitude,
         radius = ~sqrt(value) * 3,
         fillColor = ~pal(value),
-        color = "black",
+        color = "#2c3e50",
         weight = 1,
         opacity = 1,
-        fillOpacity = 0.7,
+        fillOpacity = 0.8,
         popup = ~paste0(
-          "<b>", county, ", ", state, "</b><br>",
-          "Total Petitions: ", value, "<br>",
-          "Years: ", years, "<br>",
-          "Courts: ", courts, "<br>",
-          "Results: ", results, "<br>",
-          "<hr style='margin: 5px 0;'>",
-          "Click for more details below"
+          "<div style='font-family: Source Sans Pro, sans-serif;'>",
+          "<h6 style='margin: 0 0 8px; color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 4px;'>",
+          county, ", ", state,
+          "</h6>",
+          "<strong>Total Petitions:</strong> ", value, "<br>",
+          "<strong>Years:</strong> ", years, "<br>",
+          "<strong>Courts:</strong> ", courts, "<br>",
+          "<strong>Reasons:</strong> ", reasons, "<br>",
+          "<strong>Results:</strong> ", results, "<br>",
+          "<div style='margin-top: 8px; padding-top: 8px; border-top: 1px solid #e9ecef;'>",
+          "<em>Click for more details below</em>",
+          "</div>",
+          "</div>"
+        ),
+        highlightOptions = highlightOptions(
+          weight = 2,
+          color = "#18bc9c",
+          fillOpacity = 1,
+          bringToFront = TRUE
         )
       ) %>%
       addLegend("bottomright",
@@ -310,14 +463,14 @@ server <- function(input, output, session) {
     }
     
     # Format data for display
-    stats <- data[c("county", "state", "value", "courts")]
+    stats <- data[c("county", "state", "value", "courts", "reasons")]
     stats <- stats[order(-stats$value),]
     stats <- stats[stats$value > 0,]  # Only show counties with data
     
     # Build title based on active filters
     title_parts <- c()
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      title_parts <- c(title_parts, sprintf("Reasoning: %s", input$reasoning_type))
+    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
+      title_parts <- c(title_parts, sprintf("Reasoning: %s", paste(input$reasoning_type, collapse = ", ")))
     }
     if ('party' %in% input$active_filters) {
       title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
@@ -336,16 +489,18 @@ server <- function(input, output, session) {
       "County",
       "State",
       sprintf("Petitions %d-%d%s", input$year_range[1], input$year_range[2], filter_text),
-      "Courts")
+      "Courts",
+      "Reasons")
     
     datatable(stats,
               options = list(
                 pageLength = 10,
                 order = list(list(2, 'desc')),
-                dom = 'Bfrtip'
+                dom = 'Bfrtip',
+                scrollX = TRUE,
+                className = 'cell-border stripe hover'
               ),
-              class = 'cell-border stripe',
-              style = 'bootstrap')
+              style = 'bootstrap4')
   })
   
   # Auto-load data on startup
@@ -402,20 +557,23 @@ server <- function(input, output, session) {
     # Build WHERE clause for filters
     where_clauses <- c()
     
-    if ('reasoning' %in% input$active_filters && input$reasoning_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("r.reasoning = '%s'", input$reasoning_type))
+    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
+      reasoning_conditions <- paste(sprintf("r.reasoning = '%s'", input$reasoning_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", reasoning_conditions, ")"))
     }
     
     if ('party' %in% input$active_filters) {
       where_clauses <- c(where_clauses, sprintf("r.party_accused = '%s'", input$party_type))
     }
     
-    if ('court' %in% input$active_filters && input$court_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("c.court_name = '%s'", input$court_type))
+    if ('court' %in% input$active_filters && length(input$court_type) > 0 && !('all' %in% input$court_type)) {
+      court_conditions <- paste(sprintf("p.court = '%s'", input$court_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", court_conditions, ")"))
     }
 
-    if ('result' %in% input$active_filters && input$result_type != 'all') {
-      where_clauses <- c(where_clauses, sprintf("res.result = '%s'", input$result_type))
+    if ('result' %in% input$active_filters && length(input$result_type) > 0 && !('all' %in% input$result_type)) {
+      result_conditions <- paste(sprintf("res.result = '%s'", input$result_type), collapse = " OR ")
+      where_clauses <- c(where_clauses, paste0("(", result_conditions, ")"))
     }
     
     filter_sql <- if (length(where_clauses) > 0) {
