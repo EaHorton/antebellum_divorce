@@ -330,6 +330,11 @@ server <- function(input, output, session) {
     # Build WHERE clause for filters
     where_clauses <- c()
     
+    # Check if we're filtering by multiple specific reasoning types
+    multi_reasoning <- 'reasoning' %in% input$active_filters && 
+                       length(input$reasoning_type) > 1 && 
+                       !('all' %in% input$reasoning_type)
+    
     if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
       reasoning_conditions <- paste(sprintf("r.reasoning = '%s'", input$reasoning_type), collapse = " OR ")
       where_clauses <- c(where_clauses, paste0("(", reasoning_conditions, ")"))
@@ -355,25 +360,67 @@ server <- function(input, output, session) {
       ""
     }
     
-    # Base query with year filter and joined tables
-    sql <- sprintf('
-      SELECT 
-        g.*,
-        COUNT(DISTINCT p.petition_id) as value,
-        p.court as courts,
-        GROUP_CONCAT(DISTINCT res.result) as results,
-        GROUP_CONCAT(DISTINCT p.year) as years,
-        GROUP_CONCAT(DISTINCT r.reasoning) as reasons
-      FROM Geolocations g
-      INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
-      LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
-      LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
-      LEFT JOIN Result res ON p.petition_id = res.petition_id
-      WHERE 1=1 
-      AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
-      %s
-      GROUP BY g.state, g.county, g.latitude, g.longitude
-    ', input$year_range[1], input$year_range[2], filter_sql)
+    # If multiple reasoning types selected, return data with reasoning categories
+    if (multi_reasoning) {
+      # Create a list of selected reasoning types for the query
+      selected_reasons <- paste(sprintf("'%s'", input$reasoning_type), collapse = ", ")
+      
+      sql <- sprintf('
+        WITH petition_reasoning_counts AS (
+          SELECT 
+            p.petition_id,
+            p.county,
+            p.state,
+            p.court,
+            p.year,
+            COUNT(DISTINCT CASE WHEN r.reasoning IN (%s) THEN r.reasoning END) as matching_reasons_count,
+            GROUP_CONCAT(DISTINCT CASE WHEN r.reasoning IN (%s) THEN r.reasoning END) as reasoning_list
+          FROM Petitions p
+          LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+          LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+          LEFT JOIN Result res ON p.petition_id = res.petition_id
+          WHERE 1=1 
+          AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+          GROUP BY p.petition_id, p.county, p.state, p.court, p.year
+          HAVING matching_reasons_count > 0
+        )
+        SELECT 
+          g.*,
+          CASE 
+            WHEN prc.matching_reasons_count > 1 THEN "Multiple Selected Reasonings"
+            ELSE prc.reasoning_list
+          END as reasoning_type,
+          COUNT(DISTINCT prc.petition_id) as value,
+          GROUP_CONCAT(DISTINCT prc.court) as courts,
+          GROUP_CONCAT(DISTINCT res.result) as results,
+          GROUP_CONCAT(DISTINCT prc.year) as years,
+          prc.reasoning_list as all_reasons
+        FROM Geolocations g
+        INNER JOIN petition_reasoning_counts prc ON g.county = prc.county AND g.state = prc.state
+        LEFT JOIN Result res ON prc.petition_id = res.petition_id
+        GROUP BY g.state, g.county, g.latitude, g.longitude, reasoning_type
+      ', selected_reasons, selected_reasons, input$year_range[1], input$year_range[2])
+    } else {
+      # Original query for single or no reasoning filter
+      sql <- sprintf('
+        SELECT 
+          g.*,
+          COUNT(DISTINCT p.petition_id) as value,
+          p.court as courts,
+          GROUP_CONCAT(DISTINCT res.result) as results,
+          GROUP_CONCAT(DISTINCT p.year) as years,
+          GROUP_CONCAT(DISTINCT r.reasoning) as reasons
+        FROM Geolocations g
+        INNER JOIN Petitions p ON g.county = p.county AND g.state = p.state
+        LEFT JOIN Petition_Reasoning_Lookup prl ON p.petition_id = prl.petition_id
+        LEFT JOIN Reasoning r ON prl.reasoning_id = r.reasoning_id
+        LEFT JOIN Result res ON p.petition_id = res.petition_id
+        WHERE 1=1 
+        AND CAST(COALESCE(p.year, "0") AS INTEGER) BETWEEN %d AND %d
+        %s
+        GROUP BY g.state, g.county, g.latitude, g.longitude
+      ', input$year_range[1], input$year_range[2], filter_sql)
+    }
     
     dbGetQuery(conn, sql)
   }
@@ -399,14 +446,11 @@ server <- function(input, output, session) {
                         fillOpacity = 0.1))
     }
     
-    # Create color palette based on values
-    pal <- colorNumeric(
-      palette = viridis(10),
-      domain = data$value
-    )
+    # Check if we have multiple reasoning types (indicated by reasoning_type column)
+    has_reasoning_types <- "reasoning_type" %in% names(data)
     
-    # Create the map
-    leaflet() %>%
+    # Create base map
+    map <- leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
       setView(lng = -85, lat = 34, zoom = 6) %>%
       addPolygons(data = states,
@@ -420,38 +464,114 @@ server <- function(input, output, session) {
                    color = "#2c3e50",
                    fillOpacity = 0.15,
                    bringToFront = FALSE
-                 )) %>%
-      addCircleMarkers(
-        data = data,
-        lng = ~longitude,
-        lat = ~latitude,
-        radius = ~sqrt(value) * 3,
-        fillColor = ~pal(value),
-        color = "#2c3e50",
-        weight = 1,
-        opacity = 1,
-        fillOpacity = 0.8,
-        popup = ~paste0(
-          "<div style='font-family: Source Sans Pro, sans-serif;'>",
-          "<h6 style='margin: 0 0 8px; color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 4px;'>",
-          county, ", ", state,
-          "</h6>",
-          "<strong>Total Petitions:</strong> ", value, "<br>",
-          "<strong>Years:</strong> ", years, "<br>",
-          "<strong>Courts:</strong> ", courts, "<br>",
-          "<strong>Reasons:</strong> ", reasons, "<br>",
-          "<strong>Results:</strong> ", results, "<br>",
-          "<div style='margin-top: 8px; padding-top: 8px; border-top: 1px solid #e9ecef;'>",
-          "<em>Click for more details below</em>",
-          "</div>",
-          "</div>"
+                 ))
+    
+    if (has_reasoning_types) {
+      # Color by reasoning type, size by count
+      unique_reasons <- unique(data$reasoning_type)
+      
+      # Check if we have "Multiple Selected Reasonings" category
+      has_multiple <- "Multiple Selected Reasonings" %in% unique_reasons
+      single_reasons <- unique_reasons[unique_reasons != "Multiple Selected Reasonings"]
+      
+      # Assign colors - use a distinct color for "Multiple"
+      if (has_multiple) {
+        # Use viridis colors for individual reasons, and a distinct color for multiple
+        colors <- c(viridis(length(single_reasons)), "#FF6B6B")  # Red/coral for multiple
+        names_order <- c(single_reasons, "Multiple Selected Reasonings")
+        color_map <- setNames(colors, names_order)
+      } else {
+        colors <- viridis(length(unique_reasons))
+        color_map <- setNames(colors, unique_reasons)
+      }
+      
+      # Add color column to data based on reasoning type
+      data$marker_color <- color_map[data$reasoning_type]
+      
+      # Add all markers at once with colors from the data
+      map <- map %>%
+        addCircleMarkers(
+          data = data,
+          lng = ~longitude,
+          lat = ~latitude,
+          radius = ~sqrt(value) * 3,
+          fillColor = ~marker_color,
+          color = "#2c3e50",
+          weight = 1,
+          opacity = 1,
+          fillOpacity = 0.8,
+          popup = ~paste0(
+            "<div style='font-family: Source Sans Pro, sans-serif;'>",
+            "<h6 style='margin: 0 0 8px; color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 4px;'>",
+            county, ", ", state,
+            "</h6>",
+            "<strong>Reasoning:</strong> ", reasoning_type, "<br>",
+            ifelse(!is.na(all_reasons) & reasoning_type == "Multiple Selected Reasonings", 
+                   paste0("<em>(Contains: ", all_reasons, ")</em><br>"), ""),
+            "<strong>Petitions:</strong> ", value, "<br>",
+            "<strong>Years:</strong> ", years, "<br>",
+            "<strong>Courts:</strong> ", courts, "<br>",
+            "<strong>Results:</strong> ", results, "<br>",
+            "<div style='margin-top: 8px; padding-top: 8px; border-top: 1px solid #e9ecef;'>",
+            "<em>Click for more details below</em>",
+            "</div>",
+            "</div>"
+          )
         )
-      ) %>%
-      addLegend("bottomright",
-                pal = pal,
-                values = data$value,
-                title = "Count",
-                opacity = 1)
+      
+      # Add custom legend for reasoning types with proper ordering
+      legend_labels <- if (has_multiple) names_order else unique_reasons
+      legend_colors <- if (has_multiple) colors else colors
+      
+      map <- map %>%
+        addLegend("bottomright",
+                  colors = legend_colors,
+                  labels = legend_labels,
+                  title = "Reasoning Type",
+                  opacity = 1)
+      
+    } else {
+      # Original behavior: color by count
+      pal <- colorNumeric(
+        palette = viridis(10),
+        domain = data$value
+      )
+      
+      map <- map %>%
+        addCircleMarkers(
+          data = data,
+          lng = ~longitude,
+          lat = ~latitude,
+          radius = ~sqrt(value) * 3,
+          fillColor = ~pal(value),
+          color = "#2c3e50",
+          weight = 1,
+          opacity = 1,
+          fillOpacity = 0.8,
+          popup = ~paste0(
+            "<div style='font-family: Source Sans Pro, sans-serif;'>",
+            "<h6 style='margin: 0 0 8px; color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 4px;'>",
+            county, ", ", state,
+            "</h6>",
+            "<strong>Total Petitions:</strong> ", value, "<br>",
+            "<strong>Years:</strong> ", years, "<br>",
+            "<strong>Courts:</strong> ", courts, "<br>",
+            "<strong>Reasons:</strong> ", reasons, "<br>",
+            "<strong>Results:</strong> ", results, "<br>",
+            "<div style='margin-top: 8px; padding-top: 8px; border-top: 1px solid #e9ecef;'>",
+            "<em>Click for more details below</em>",
+            "</div>",
+            "</div>"
+          )
+        ) %>%
+        addLegend("bottomright",
+                  pal = pal,
+                  values = data$value,
+                  title = "Count",
+                  opacity = 1)
+    }
+    
+    map
   })
   
   # Render county statistics table
