@@ -416,10 +416,10 @@ server <- function(input, output, session) {
                  color = "#3498db",
                  fillOpacity = 0.2,
                  highlightOptions = highlightOptions(
-                   weight = 3,
+                   weight = 2,
                    color = "#2c3e50",
-                   fillOpacity = 0.3,
-                   bringToFront = TRUE
+                   fillOpacity = 0.15,
+                   bringToFront = FALSE
                  )) %>%
       addCircleMarkers(
         data = data,
