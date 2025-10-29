@@ -128,6 +128,9 @@ ui <- fluidPage(
         color: #2c3e50;
         margin-bottom: 1.5rem;
       }
+      #download_filtered_csv {
+        margin-top: 1rem;
+      }
       /* Leaflet custom styles */
       .leaflet-container {
         border-radius: 8px;
@@ -187,48 +190,38 @@ ui <- fluidPage(
                             'Court Type' = 'court',
                             'Result' = 'result'
                           )),
-        
-        conditionalPanel(
-          condition = "input.active_filters.includes('reasoning')",
-          selectizeInput('reasoning_type', 'Reasoning Category',
-                     choices = c('All' = 'all'),
-                     multiple = TRUE,
-                     options = list(
-                       placeholder = 'Select reasons',
-                       plugins = list('remove_button')
-                     ))
-        ),
-        
-        conditionalPanel(
-          condition = "input.active_filters.includes('party')",
-          selectInput('party_type', 'Party Accused',
-                     choices = c(
-                       'Husband Accused' = 'husband_accused',
-                       'Wife Accused' = 'wife_accused'
-                     ))
-        ),
-        
-        conditionalPanel(
-          condition = "input.active_filters.includes('court')",
-          selectizeInput('court_type', 'Court Type',
-                     choices = c('All' = 'all'),
-                     multiple = TRUE,
-                     options = list(
-                       placeholder = 'Select courts',
-                       plugins = list('remove_button')
-                     ))
-        ),
+      
+      conditionalPanel(
+        condition = "input.active_filters.includes('reasoning')",
+        selectizeInput('reasoning_type', 'Reasoning Category',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select reasons'))  # Will be populated dynamically
+      ),
+      
+      conditionalPanel(
+        condition = "input.active_filters.includes('party')",
+        selectInput('party_type', 'Party Accused',
+                   choices = c(
+                     'Husband Accused' = 'husband_accused',
+                     'Wife Accused' = 'wife_accused'
+                   ))
+      ),
+      
+      conditionalPanel(
+        condition = "input.active_filters.includes('court')",
+        selectizeInput('court_type', 'Court Type',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select courts'))  # Will be populated dynamically
+      ),
 
-        conditionalPanel(
-          condition = "input.active_filters.includes('result')",
-          selectizeInput('result_type', 'Petition Result',
-                     choices = c('All' = 'all'),
-                     multiple = TRUE,
-                     options = list(
-                       placeholder = 'Select results',
-                       plugins = list('remove_button')
-                     ))
-        )
+      conditionalPanel(
+        condition = "input.active_filters.includes('result')",
+        selectizeInput('result_type', 'Petition Result',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select results'))  # Will be populated dynamically
       ),
       
       div(class = "card mt-4",
@@ -248,8 +241,7 @@ ui <- fluidPage(
         textInput('filter_col', 'Filter Column', value='', placeholder = 'Enter column name'),
         textInput('filter_val', 'Filter Value', value='', placeholder = 'Enter filter value'),
         numericInput('nrows', 'Rows per Page', value = 50, min = 1, max = 1000),
-        actionButton('refresh', 'Refresh Data', class = "btn-primary w-100 mt-3")
-      )
+        actionButton('refresh', 'Refresh Data', class = "btn-primary w-100 mt-3"))
     ),
     
     mainPanel(
@@ -391,24 +383,17 @@ server <- function(input, output, session) {
              addProviderTiles(providers$CartoDB.Positron) %>%
              setView(lng = -85, lat = 34, zoom = 6) %>%
              addPolygons(data = states,
-                        fillColor = "#f8f9fa",
+                        fillColor = "white",
                         weight = 2,
-                        opacity = 0.8,
-                        color = "#3498db",
-                        fillOpacity = 0.2,
-                        highlightOptions = highlightOptions(
-                          weight = 3,
-                          color = "#2c3e50",
-                          fillOpacity = 0.3,
-                          bringToFront = TRUE
-                        )))
+                        opacity = 1,
+                        color = "#008cba",
+                        fillOpacity = 0.1))
     }
     
     # Create color palette based on values
     pal <- colorNumeric(
-      palette = "viridis",
-      domain = data$value,
-      reverse = TRUE
+      palette = viridis(10),
+      domain = data$value
     )
     
     # Create the map
@@ -462,10 +447,8 @@ server <- function(input, output, session) {
       addLegend("bottomright",
                 pal = pal,
                 values = data$value,
-                title = "Number of Petitions",
-                opacity = 0.9,
-                labFormat = labelFormat(prefix = ""),
-                className = "info legend")
+                title = "Count",
+                opacity = 1)
   })
   
   # Render county statistics table
@@ -557,14 +540,7 @@ server <- function(input, output, session) {
   output$petitions_table <- renderDT({
     df <- query_data()
     if (is.null(df)) return(NULL)
-    datatable(df, 
-             options = list(
-               pageLength = input$nrows,
-               scrollX = TRUE,
-               dom = 'Bfrtip',
-               className = 'cell-border stripe hover'
-             ),
-             style = 'bootstrap4')
+    datatable(df, options = list(pageLength = input$nrows, scrollX = TRUE))
   })
   
   output$download_csv <- downloadHandler(
@@ -643,10 +619,10 @@ server <- function(input, output, session) {
               options = list(
                 pageLength = 25,
                 scrollX = TRUE,
-                dom = 'Bfrtip',
-                className = 'cell-border stripe hover'
+                dom = 'Bfrtip'
               ),
-              style = 'bootstrap4')
+              class = 'cell-border stripe',
+              style = 'bootstrap')
   })
   
   # Download handler for filtered results
@@ -661,5 +637,4 @@ server <- function(input, output, session) {
   )
 }
 
-# Run the app
-shinyApp(ui = ui, server = server)
+shinyApp(ui, server)

@@ -176,83 +176,72 @@ ui <- fluidPage(
       }
     ")
   ),
-  
   tags$div(class = "title-panel", "Antebellum Divorce Petitions Database"),
   
   sidebarLayout(
     sidebarPanel(
       div(class = "card",
-          h4("Filter Options", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
-          # Filter controls
-          checkboxGroupInput('active_filters', 'Select Filters to Apply:',
+        h4("Filter Options", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+        # Filter controls
+        checkboxGroupInput('active_filters', 'Select Filters to Apply:',
                           choices = c(
                             'Reasoning' = 'reasoning',
                             'Party Accused' = 'party',
                             'Court Type' = 'court',
                             'Result' = 'result'
                           )),
-          
-          conditionalPanel(
-            condition = "input.active_filters.includes('reasoning')",
-            selectizeInput('reasoning_type', 'Reasoning Category',
-                       choices = c('All' = 'all'),
-                       multiple = TRUE,
-                       options = list(
-                         placeholder = 'Select reasons',
-                         plugins = list('remove_button')
-                       ))
-          ),
-          
-          conditionalPanel(
-            condition = "input.active_filters.includes('party')",
-            selectInput('party_type', 'Party Accused',
-                       choices = c(
-                         'Husband Accused' = 'husband_accused',
-                         'Wife Accused' = 'wife_accused'
-                       ))
-          ),
-          
-          conditionalPanel(
-            condition = "input.active_filters.includes('court')",
-            selectizeInput('court_type', 'Court Type',
-                       choices = c('All' = 'all'),
-                       multiple = TRUE,
-                       options = list(
-                         placeholder = 'Select courts',
-                         plugins = list('remove_button')
-                       ))
-          ),
-          
-          conditionalPanel(
-            condition = "input.active_filters.includes('result')",
-            selectizeInput('result_type', 'Petition Result',
-                       choices = c('All' = 'all'),
-                       multiple = TRUE,
-                       options = list(
-                         placeholder = 'Select results',
-                         plugins = list('remove_button')
-                       ))
-          )
+      
+      conditionalPanel(
+        condition = "input.active_filters.includes('reasoning')",
+        selectizeInput('reasoning_type', 'Reasoning Category',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select reasons'))  # Will be populated dynamically
+      ),
+      
+      conditionalPanel(
+        condition = "input.active_filters.includes('party')",
+        selectInput('party_type', 'Party Accused',
+                   choices = c(
+                     'Husband Accused' = 'husband_accused',
+                     'Wife Accused' = 'wife_accused'
+                   ))
+      ),
+      
+      conditionalPanel(
+        condition = "input.active_filters.includes('court')",
+        selectizeInput('court_type', 'Court Type',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select courts'))  # Will be populated dynamically
+      ),
+
+      conditionalPanel(
+        condition = "input.active_filters.includes('result')",
+        selectizeInput('result_type', 'Petition Result',
+                   choices = c('All' = 'all'),
+                   multiple = TRUE,
+                   options = list(placeholder = 'Select results'))  # Will be populated dynamically
       ),
       
       div(class = "card mt-4",
-          h4("Time Period", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
-          # Time range slider
-          sliderInput("year_range", "Year Range:",
-                     min = 1800, max = 1860,
-                     value = c(1800, 1860),
-                     step = 1,
-                     sep = "",
-                     animate = TRUE)
+        h4("Time Period", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+        # Time range slider
+        sliderInput("year_range", "Year Range:",
+                   min = 1800, max = 1860,
+                   value = c(1800, 1860),
+                   step = 1,
+                   sep = "",
+                   animate = TRUE)
       ),
       
       div(class = "card mt-4",
-          h4("Table Controls", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
-          # Original table controls
-          textInput('filter_col', 'Filter Column', value='', placeholder = 'Enter column name'),
-          textInput('filter_val', 'Filter Value', value='', placeholder = 'Enter filter value'),
-          numericInput('nrows', 'Rows per Page', value = 50, min = 1, max = 1000),
-          actionButton('refresh', 'Refresh Data', class = "btn-primary w-100 mt-3"))
+        h4("Table Controls", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
+        # Original table controls
+        textInput('filter_col', 'Filter Column', value='', placeholder = 'Enter column name'),
+        textInput('filter_val', 'Filter Value', value='', placeholder = 'Enter filter value'),
+        numericInput('nrows', 'Rows per Page', value = 50, min = 1, max = 1000),
+        actionButton('refresh', 'Refresh Data', class = "btn-primary w-100 mt-3"))
     ),
     
     mainPanel(
@@ -270,7 +259,9 @@ ui <- fluidPage(
                   div(class = "results-panel",
                       h4("Filtered Results", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
                       DTOutput("filtered_results_table"),
-                      downloadButton('download_filtered_csv', 'Download Filtered Results', class = "btn-primary mt-3")))),
+                      downloadButton('download_filtered_csv', 'Download Filtered Results', class = "btn-primary mt-3")
+                  )
+                )),
         tabPanel("Complete Database", 
                 div(class = "card",
                     h4("All Petitions", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
@@ -315,14 +306,14 @@ server <- function(input, output, session) {
     updateSelectInput(session, "court_type",
                      choices = c('All' = 'all', setNames(courts$court, courts$court)))
   })
-  
+
   # Populate result choices dynamically
   observe({
     results <- dbGetQuery(conn, "SELECT DISTINCT result FROM Result ORDER BY result")
     updateSelectInput(session, "result_type",
                      choices = c('All' = 'all', setNames(results$result, results$result)))
   })
-  
+
   # Function to get map data based on active filters
   get_map_data <- function() {
     if (is.null(input$year_range)) return(NULL)
@@ -343,7 +334,7 @@ server <- function(input, output, session) {
       court_conditions <- paste(sprintf("p.court = '%s'", input$court_type), collapse = " OR ")
       where_clauses <- c(where_clauses, paste0("(", court_conditions, ")"))
     }
-    
+
     if ('result' %in% input$active_filters && length(input$result_type) > 0 && !('all' %in% input$result_type)) {
       result_conditions <- paste(sprintf("res.result = '%s'", input$result_type), collapse = " OR ")
       where_clauses <- c(where_clauses, paste0("(", result_conditions, ")"))
@@ -445,6 +436,12 @@ server <- function(input, output, session) {
           "<em>Click for more details below</em>",
           "</div>",
           "</div>"
+        ),
+        highlightOptions = highlightOptions(
+          weight = 2,
+          color = "#18bc9c",
+          fillOpacity = 1,
+          bringToFront = TRUE
         )
       ) %>%
       addLegend("bottomright",
@@ -478,8 +475,8 @@ server <- function(input, output, session) {
     if ('party' %in% input$active_filters) {
       title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
     }
-    if ('court' %in% input$active_filters && length(input$court_type) > 0 && !('all' %in% input$court_type)) {
-      title_parts <- c(title_parts, sprintf("Court: %s", paste(input$court_type, collapse = ", ")))
+    if ('court' %in% input$active_filters && input$court_type != 'all') {
+      title_parts <- c(title_parts, sprintf("Court: %s", input$court_type))
     }
     
     filter_text <- if (length(title_parts) > 0) {
@@ -493,8 +490,7 @@ server <- function(input, output, session) {
       "State",
       sprintf("Petitions %d-%d%s", input$year_range[1], input$year_range[2], filter_text),
       "Courts",
-      "Reasons"
-    )
+      "Reasons")
     
     datatable(stats,
               options = list(
@@ -526,7 +522,6 @@ server <- function(input, output, session) {
       sql <- paste0(sql, ' WHERE p.', filter_col, ' = ?')
       has_filter <- TRUE
     }
-    
     sql <- paste0(sql, ' GROUP BY p.petition_id LIMIT ', as.integer(input$nrows))
     
     res <- tryCatch({
@@ -539,25 +534,15 @@ server <- function(input, output, session) {
       showNotification(paste('Query error:', e$message), type='error')
       return(NULL)
     })
-    
     query_data(res)
   })
   
-  # Render petitions table
   output$petitions_table <- renderDT({
     df <- query_data()
     if (is.null(df)) return(NULL)
-    datatable(df, 
-             options = list(
-               pageLength = input$nrows,
-               scrollX = TRUE,
-               dom = 'Bfrtip',
-               className = 'cell-border stripe hover'
-             ),
-             style = 'bootstrap4')
+    datatable(df, options = list(pageLength = input$nrows, scrollX = TRUE))
   })
   
-  # Download handler for complete dataset
   output$download_csv <- downloadHandler(
     filename = function() paste0('petitions_', Sys.Date(), '.csv'),
     content = function(file) {
@@ -585,7 +570,7 @@ server <- function(input, output, session) {
       court_conditions <- paste(sprintf("p.court = '%s'", input$court_type), collapse = " OR ")
       where_clauses <- c(where_clauses, paste0("(", court_conditions, ")"))
     }
-    
+
     if ('result' %in% input$active_filters && length(input$result_type) > 0 && !('all' %in% input$result_type)) {
       result_conditions <- paste(sprintf("res.result = '%s'", input$result_type), collapse = " OR ")
       where_clauses <- c(where_clauses, paste0("(", result_conditions, ")"))
@@ -634,10 +619,10 @@ server <- function(input, output, session) {
               options = list(
                 pageLength = 25,
                 scrollX = TRUE,
-                dom = 'Bfrtip',
-                className = 'cell-border stripe hover'
+                dom = 'Bfrtip'
               ),
-              style = 'bootstrap4')
+              class = 'cell-border stripe',
+              style = 'bootstrap')
   })
   
   # Download handler for filtered results
