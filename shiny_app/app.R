@@ -8,9 +8,16 @@ library(leaflet.extras)
 library(viridis)
 library(bslib)
 
-# Path to the SQLite DB and boundary data (relative to repo root)
-db_path <- file.path('..', 'dv_petitions.db')
-boundary_dir <- file.path('..', 'data', 'boundaries')
+# Path to the SQLite DB and boundary data (absolute paths)
+app_dir <- getwd()
+base_dir <- dirname(app_dir)
+db_path <- file.path(base_dir, 'dv_petitions.db')
+boundary_dir <- file.path(base_dir, 'data', 'boundaries')
+
+print(paste("Base directory:", base_dir))
+print(paste("Boundary directory:", boundary_dir))
+print("Available boundary files:")
+print(list.files(boundary_dir, pattern = "*.geojson"))
 
 # Function to get state boundaries for a specific year
 get_state_boundaries <- function(year) {
@@ -19,7 +26,19 @@ get_state_boundaries <- function(year) {
   # Get the closest available year that's not greater than the target year
   available_years <- c(1800, 1810, 1820, 1830, 1840, 1850, 1860)
   map_year <- max(available_years[available_years <= decade])
-  sf::st_read(file.path(boundary_dir, sprintf("US_state_%d.geojson", map_year)), quiet = TRUE)
+  file_path <- file.path(boundary_dir, sprintf("US_state_%d.geojson", map_year))
+  print(paste("Loading boundary file:", file_path))
+  print(paste("File exists:", file.exists(file_path)))
+  if (!file.exists(file_path)) {
+    print(paste("Error: File does not exist:", file_path))
+    return(NULL)
+  }
+  # Read and transform to WGS84 (what Leaflet expects)
+  states <- sf::st_read(file_path, quiet = TRUE)
+  states <- sf::st_transform(states, 4326)  # 4326 is the EPSG code for WGS84
+  print(paste("Loaded", nrow(states), "state boundaries"))
+  print(paste("CRS after transformation:", sf::st_crs(states)$input))
+  return(states)
 }
 
 # Custom theme settings
@@ -40,6 +59,8 @@ custom_theme <- bs_theme(
 # UI
 ui <- fluidPage(
   theme = custom_theme,
+  # Initialize map_year input
+  tags$script("$(document).ready(function() { Shiny.setInputValue('map_year', 1860); });"),
   tags$head(
     tags$link(
       href = "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Sans+Pro:wght@400;600&display=swap",
@@ -304,7 +325,21 @@ server <- function(input, output, session) {
   
   # Reactive states boundary data
   states_data <- reactive({
-    get_state_boundaries(as.numeric(input$map_year))
+    year <- as.numeric(input$map_year)
+    print(paste("Selected year:", year))
+    boundaries <- get_state_boundaries(year)
+    if (is.null(boundaries)) {
+      print("Warning: No boundary data loaded")
+    }
+    boundaries
+  })
+  
+  # Observer to track when boundaries change
+  observe({
+    boundaries <- states_data()
+    if (!is.null(boundaries)) {
+      print(paste("Boundaries updated. Number of states:", nrow(boundaries)))
+    }
   })
   
   # Initialize year range based on data
@@ -455,15 +490,23 @@ server <- function(input, output, session) {
     current_states <- states_data()
     
     if (is.null(data) || nrow(data) == 0) {
-      return(leaflet() %>%
+      map <- leaflet() %>%
              addProviderTiles(providers$CartoDB.Positron) %>%
-             setView(lng = -85, lat = 34, zoom = 6) %>%
-             addPolygons(data = current_states,
-                        fillColor = "white",
-                        weight = 2,
-                        opacity = 1,
-                        color = "#008cba",
-                        fillOpacity = 0.1))
+             setView(lng = -85, lat = 34, zoom = 6)
+      
+      if (!is.null(current_states)) {
+        map <- map %>%
+          addMapPane("polygons", zIndex = 420) %>%
+          addPolygons(data = current_states,
+                     fillColor = NA,  # No fill color
+                     weight = 2,      # Thinner lines
+                     opacity = 1,
+                     color = "#000000",   # Pure black
+                     dashArray = NULL,
+                     fillOpacity = 0,
+                     options = pathOptions(pane = "polygons", interactive = TRUE))
+      }
+      return(map)
     }
     
     # Check if we have multiple reasoning types (indicated by reasoning_type column)
@@ -473,18 +516,34 @@ server <- function(input, output, session) {
     map <- leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
       setView(lng = -85, lat = 34, zoom = 6) %>%
-      addPolygons(data = current_states,
-                 fillColor = "#f8f9fa",
-                 weight = 2,
-                 opacity = 0.8,
-                 color = "#3498db",
-                 fillOpacity = 0.2,
-                 highlightOptions = highlightOptions(
-                   weight = 2,
-                   color = "#2c3e50",
-                   fillOpacity = 0.15,
-                   bringToFront = FALSE
-                 ))
+      addMapPane("polygons", zIndex = 420)
+    
+    # Add state boundaries if available
+    if (!is.null(current_states)) {
+      map <- map %>%
+        addPolygons(
+          data = current_states,
+          fillColor = NA,        # No fill color
+          weight = 2,            # Thinner lines
+          opacity = 1,
+          color = "#000000",     # Pure black
+          dashArray = NULL,
+          fillOpacity = 0,
+          layerId = ~paste("state", row.names(current_states)),
+          options = pathOptions(pane = "polygons", interactive = TRUE),
+          highlightOptions = highlightOptions(
+            weight = 3,          # Slightly thicker on hover
+            color = "#333333",   # Darker gray on hover
+            fillOpacity = 0.1,
+            bringToFront = TRUE
+          ),
+          label = ~paste("State boundary from year", input$map_year)
+        )
+    } else {
+      print("Warning: No state boundaries to display")
+    }
+    
+    map  # Return the map object
     
     if (has_reasoning_types) {
       # Color by reasoning type, size by count
