@@ -10,7 +10,17 @@ library(bslib)
 
 # Path to the SQLite DB and boundary data (relative to repo root)
 db_path <- file.path('..', 'dv_petitions.db')
-states_geojson <- file.path('..', 'data', 'boundaries', 'states_1860.geojson')
+boundary_dir <- file.path('..', 'data', 'boundaries')
+
+# Function to get state boundaries for a specific year
+get_state_boundaries <- function(year) {
+  # Round down to nearest decade
+  decade <- floor(year/10) * 10
+  # Get the closest available year that's not greater than the target year
+  available_years <- c(1800, 1810, 1820, 1830, 1840, 1850, 1860)
+  map_year <- max(available_years[available_years <= decade])
+  sf::st_read(file.path(boundary_dir, sprintf("US_state_%d.geojson", map_year)), quiet = TRUE)
+}
 
 # Custom theme settings
 custom_theme <- bs_theme(
@@ -259,6 +269,12 @@ ui <- fluidPage(
       tabsetPanel(
         tabPanel("Interactive Map", 
                 div(class = "card",
+                    div(class = "mb-3",
+                        style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px;",
+                        selectInput("map_year", "Map Boundaries Year:",
+                                  choices = c(1800, 1810, 1820, 1830, 1840, 1850, 1860),
+                                  selected = 1860,
+                                  width = "200px")),
                     leafletOutput("map", height = "600px")),
                 div(class = "card mt-4",
                     h4("County Statistics", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
@@ -286,8 +302,10 @@ server <- function(input, output, session) {
   conn <- dbConnect(RSQLite::SQLite(), db_path)
   onSessionEnded(function() dbDisconnect(conn))
   
-  # Load states boundary data
-  states <- st_read(states_geojson, quiet = TRUE)
+  # Reactive states boundary data
+  states_data <- reactive({
+    get_state_boundaries(as.numeric(input$map_year))
+  })
   
   # Initialize year range based on data
   observe({
@@ -434,11 +452,13 @@ server <- function(input, output, session) {
   # Render the map
   output$map <- renderLeaflet({
     data <- map_data()
+    current_states <- states_data()
+    
     if (is.null(data) || nrow(data) == 0) {
       return(leaflet() %>%
              addProviderTiles(providers$CartoDB.Positron) %>%
              setView(lng = -85, lat = 34, zoom = 6) %>%
-             addPolygons(data = states,
+             addPolygons(data = current_states,
                         fillColor = "white",
                         weight = 2,
                         opacity = 1,
@@ -453,7 +473,7 @@ server <- function(input, output, session) {
     map <- leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
       setView(lng = -85, lat = 34, zoom = 6) %>%
-      addPolygons(data = states,
+      addPolygons(data = current_states,
                  fillColor = "#f8f9fa",
                  weight = 2,
                  opacity = 0.8,
