@@ -272,9 +272,10 @@ ui <- fluidPage(
           sliderInput("year_range", "Year Range:",
                      min = 1800, max = 1860,
                      value = c(1800, 1860),
-                     step = 1,
+                     step = 10,  # Changed to 10-year steps to match boundary data
                      sep = "",
-                     animate = TRUE)
+                     animate = list(interval = 2000),  # 2 second delay between animations
+                     width = "100%")
       ),
       
       div(class = "card mt-4",
@@ -290,12 +291,6 @@ ui <- fluidPage(
       tabsetPanel(
         tabPanel("Interactive Map", 
                 div(class = "card",
-                    div(class = "mb-3",
-                        style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px;",
-                        selectInput("map_year", "Map Boundaries Year:",
-                                  choices = c(1800, 1810, 1820, 1830, 1840, 1850, 1860),
-                                  selected = 1860,
-                                  width = "200px")),
                     leafletOutput("map", height = "600px")),
                 div(class = "card mt-4",
                     h4("County Statistics", class = "mb-4", style = "color: #2c3e50; border-bottom: 2px solid #18bc9c; padding-bottom: 0.5rem;"),
@@ -325,8 +320,9 @@ server <- function(input, output, session) {
   
   # Reactive states boundary data
   states_data <- reactive({
-    year <- as.numeric(input$map_year)
-    print(paste("Selected year:", year))
+    # Use the end year of the range for the map boundaries
+    year <- as.numeric(input$year_range[2])
+    print(paste("Selected year for boundaries:", year))
     boundaries <- get_state_boundaries(year)
     if (is.null(boundaries)) {
       print("Warning: No boundary data loaded")
@@ -334,11 +330,32 @@ server <- function(input, output, session) {
     boundaries
   })
   
-  # Observer to track when boundaries change
+  # Observer to track when boundaries change and update the map
   observe({
     boundaries <- states_data()
     if (!is.null(boundaries)) {
       print(paste("Boundaries updated. Number of states:", nrow(boundaries)))
+      # Update the map with new boundaries
+      leafletProxy("map") %>%
+        clearShapes() %>%
+        addPolygons(
+          data = boundaries,
+          fillColor = NA,
+          weight = 2,
+          opacity = 1,
+          color = "#000000",
+          dashArray = NULL,
+          fillOpacity = 0,
+          layerId = ~paste("state", row.names(boundaries)),
+          options = pathOptions(pane = "polygons", interactive = TRUE),
+          highlightOptions = highlightOptions(
+            weight = 3,
+            color = "#333333",
+            fillOpacity = 0.1,
+            bringToFront = TRUE
+          ),
+          label = ~paste("State boundary from year", input$year_range[2])
+        )
     }
   })
   
