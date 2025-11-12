@@ -21,11 +21,24 @@ print(list.files(boundary_dir, pattern = "*.geojson"))
 
 # Function to get state boundaries for a specific year
 get_state_boundaries <- function(year) {
+  # Handle years beyond our data range - use 1860 for anything after 1860
+  if (year > 1860) {
+    year <- 1860
+    print(paste("Year beyond available data, using 1860 boundaries"))
+  }
+  
   # Round down to nearest decade
   decade <- floor(year/10) * 10
   # Get the closest available year that's not greater than the target year
   available_years <- c(1800, 1810, 1820, 1830, 1840, 1850, 1860)
   map_year <- max(available_years[available_years <= decade])
+  
+  # Fallback to 1860 if no suitable year found
+  if (length(map_year) == 0 || is.na(map_year)) {
+    map_year <- 1860
+    print("No suitable boundary year found, defaulting to 1860")
+  }
+  
   file_path <- file.path(boundary_dir, sprintf("US_state_%d.geojson", map_year))
   print(paste("Loading boundary file:", file_path))
   print(paste("File exists:", file.exists(file_path)))
@@ -36,7 +49,7 @@ get_state_boundaries <- function(year) {
   # Read and transform to WGS84 (what Leaflet expects)
   states <- sf::st_read(file_path, quiet = TRUE)
   states <- sf::st_transform(states, 4326)  # 4326 is the EPSG code for WGS84
-  print(paste("Loaded", nrow(states), "state boundaries"))
+  print(paste("Loaded", nrow(states), "state boundaries for year", map_year))
   print(paste("CRS after transformation:", sf::st_crs(states)$input))
   return(states)
 }
@@ -272,7 +285,7 @@ ui <- fluidPage(
           sliderInput("year_range", "Year Range:",
                      min = 1800, max = 1860,
                      value = c(1800, 1860),
-                     step = 10,  # Changed to 10-year steps to match boundary data
+                     step = 1,  # Allow single year steps
                      sep = "",
                      animate = list(interval = 2000),  # 2 second delay between animations
                      width = "100%")
@@ -320,8 +333,8 @@ server <- function(input, output, session) {
   
   # Reactive states boundary data
   states_data <- reactive({
-    # Use the end year of the range for the map boundaries
-    year <- as.numeric(input$year_range[2])
+    # Use the end year of the range for the map boundaries, default to 1860 if not available
+    year <- if (!is.null(input$year_range)) as.numeric(input$year_range[2]) else 1860
     print(paste("Selected year for boundaries:", year))
     boundaries <- get_state_boundaries(year)
     if (is.null(boundaries)) {
@@ -332,6 +345,9 @@ server <- function(input, output, session) {
   
   # Observer to track when boundaries change and update the map
   observe({
+    # Only proceed if inputs are available
+    if (is.null(input$year_range)) return()
+    
     boundaries <- states_data()
     if (!is.null(boundaries)) {
       print(paste("Boundaries updated. Number of states:", nrow(boundaries)))
@@ -342,13 +358,12 @@ server <- function(input, output, session) {
           data = boundaries,
           fillColor = NA,
           weight = 2,
-          opacity = 1,
+          opacity = 0.4,  # Reduced opacity to make lines fainter
           color = "#000000",
           dashArray = NULL,
           fillOpacity = 0,
           layerId = ~paste("state", row.names(boundaries)),
-          options = pathOptions(pane = "polygons", interactive = TRUE),
-          label = ~paste("State boundary from year", input$year_range[2])
+          options = pathOptions(pane = "polygons", interactive = TRUE)
         )
     }
   })
@@ -511,12 +526,11 @@ server <- function(input, output, session) {
           addPolygons(data = current_states,
                      fillColor = NA,  # No fill color
                      weight = 2,      # Thinner lines
-                     opacity = 1,
+                     opacity = 0.4,   # Reduced opacity to make lines fainter
                      color = "#000000",   # Pure black
                      dashArray = NULL,
                      fillOpacity = 0,
-                     options = pathOptions(pane = "polygons", interactive = TRUE),
-                     label = ~paste("State boundary from year", input$year_range[2]))
+                     options = pathOptions(pane = "polygons", interactive = TRUE))
       }
       return(map)
     }
@@ -537,13 +551,12 @@ server <- function(input, output, session) {
           data = current_states,
           fillColor = NA,        # No fill color
           weight = 2,            # Thinner lines
-          opacity = 1,
+          opacity = 0.4,         # Reduced opacity to make lines fainter
           color = "#000000",     # Pure black
           dashArray = NULL,
           fillOpacity = 0,
           layerId = ~paste("state", row.names(current_states)),
-          options = pathOptions(pane = "polygons", interactive = TRUE),
-          label = ~paste("State boundary from year", input$year_range[2])
+          options = pathOptions(pane = "polygons", interactive = TRUE)
         )
     } else {
       print("Warning: No state boundaries to display")
@@ -661,55 +674,24 @@ server <- function(input, output, session) {
   
   # Render county statistics table
   output$county_stats <- renderDT({
-    data <- map_data()
+    if (is.null(input$year_range) || length(input$year_range) < 2) {
+      return(datatable(data.frame(County = character(0), State = character(0), Count = integer(0))))
+    }
+    
+    data <- tryCatch(map_data(), error = function(e) NULL)
     if (is.null(data) || nrow(data) == 0) {
-      return(datatable(data.frame(
-        County = character(0),
-        State = character(0),
-        Count = integer(0)
-      )))
+      return(datatable(data.frame(County = character(0), State = character(0), Count = integer(0))))
     }
     
     # Format data for display
     stats <- data[c("county", "state", "value", "courts", "reasons")]
     stats <- stats[order(-stats$value),]
-    stats <- stats[stats$value > 0,]  # Only show counties with data
+    stats <- stats[stats$value > 0,]
     
-    # Build title based on active filters
-    title_parts <- c()
-    if ('reasoning' %in% input$active_filters && length(input$reasoning_type) > 0 && !('all' %in% input$reasoning_type)) {
-      title_parts <- c(title_parts, sprintf("Reasoning: %s", paste(input$reasoning_type, collapse = ", ")))
-    }
-    if ('party' %in% input$active_filters) {
-      title_parts <- c(title_parts, sprintf("Party: %s", input$party_type))
-    }
-    if ('court' %in% input$active_filters && length(input$court_type) > 0 && !('all' %in% input$court_type)) {
-      title_parts <- c(title_parts, sprintf("Court: %s", paste(input$court_type, collapse = ", ")))
-    }
+    # Simple column names
+    colnames(stats) <- c("County", "State", "Count", "Courts", "Reasons")
     
-    filter_text <- if (length(title_parts) > 0) {
-      paste0(" (", paste(title_parts, collapse = ", "), ")")
-    } else {
-      ""
-    }
-    
-    colnames(stats) <- c(
-      "County",
-      "State",
-      sprintf("Petitions %d-%d%s", input$year_range[1], input$year_range[2], filter_text),
-      "Courts",
-      "Reasons"
-    )
-    
-    datatable(stats,
-              options = list(
-                pageLength = 10,
-                order = list(list(2, 'desc')),
-                dom = 'Bfrtip',
-                scrollX = TRUE,
-                className = 'cell-border stripe hover'
-              ),
-              style = 'bootstrap4')
+    datatable(stats, options = list(pageLength = 10, scrollX = TRUE))
   })
   
   # Auto-load data on startup
