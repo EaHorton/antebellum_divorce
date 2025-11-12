@@ -348,12 +348,6 @@ server <- function(input, output, session) {
           fillOpacity = 0,
           layerId = ~paste("state", row.names(boundaries)),
           options = pathOptions(pane = "polygons", interactive = TRUE),
-          highlightOptions = highlightOptions(
-            weight = 3,
-            color = "#333333",
-            fillOpacity = 0.1,
-            bringToFront = TRUE
-          ),
           label = ~paste("State boundary from year", input$year_range[2])
         )
     }
@@ -521,7 +515,8 @@ server <- function(input, output, session) {
                      color = "#000000",   # Pure black
                      dashArray = NULL,
                      fillOpacity = 0,
-                     options = pathOptions(pane = "polygons", interactive = TRUE))
+                     options = pathOptions(pane = "polygons", interactive = TRUE),
+                     label = ~paste("State boundary from year", input$year_range[2]))
       }
       return(map)
     }
@@ -548,13 +543,7 @@ server <- function(input, output, session) {
           fillOpacity = 0,
           layerId = ~paste("state", row.names(current_states)),
           options = pathOptions(pane = "polygons", interactive = TRUE),
-          highlightOptions = highlightOptions(
-            weight = 3,          # Slightly thicker on hover
-            color = "#333333",   # Darker gray on hover
-            fillOpacity = 0.1,
-            bringToFront = TRUE
-          ),
-          label = ~paste("State boundary from year", input$map_year)
+          label = ~paste("State boundary from year", input$year_range[2])
         )
     } else {
       print("Warning: No state boundaries to display")
