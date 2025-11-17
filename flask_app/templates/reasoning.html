@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Divorce Reasons by State - Pie Chart Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        label {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        select {
+            padding: 10px 20px;
+            font-size: 1em;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        select:hover {
+            border-color: #764ba2;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #764ba2;
+            box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+        }
+        
+        .plot-container {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            min-height: 600px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 1.2em;
+        }
+        
+        .error {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .nav-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: transform 0.3s ease;
+        }
+        
+        .nav-link:hover {
+            transform: translateY(-2px);
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="nav-link">← Back to Dashboard</a>
+        
+        <h1>📊 Divorce Reasons Analysis</h1>
+        <p class="subtitle">Top 3 Most Common Accusations by State</p>
+        
+        <div class="controls">
+            <label for="stateSelect">Select State:</label>
+            <select id="stateSelect">
+                <option value="">Loading states...</option>
+            </select>
+        </div>
+        
+        <div class="plot-container">
+            <div id="pieChart" class="loading">Select a state to view data...</div>
+        </div>
+    </div>
+    
+    <script>
+        // Load available states
+        fetch('/api/stats')
+            .then(response => response.json())
+            .then(data => {
+                const select = document.getElementById('stateSelect');
+                select.innerHTML = '<option value="">-- Select a State --</option>';
+                
+                data.by_state.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.state;
+                    option.textContent = `${item.state} (${item.count} petitions)`;
+                    select.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading states:', error);
+                document.getElementById('stateSelect').innerHTML = 
+                    '<option value="">Error loading states</option>';
+            });
+        
+        // Handle state selection
+        document.getElementById('stateSelect').addEventListener('change', function() {
+            const state = this.value;
+            const chartDiv = document.getElementById('pieChart');
+            
+            if (!state) {
+                chartDiv.innerHTML = '<div class="loading">Select a state to view data...</div>';
+                return;
+            }
+            
+            chartDiv.innerHTML = '<div class="loading">Loading chart...</div>';
+            
+            fetch(`/plot/reasoning_by_state/${encodeURIComponent(state)}`)
+                .then(response => response.json())
+                .then(data => {
+                    Plotly.newPlot('pieChart', data.data, data.layout);
+                })
+                .catch(error => {
+                    console.error('Error loading chart:', error);
+                    chartDiv.innerHTML = '<div class="error">Error loading chart. Please try again.</div>';
+                });
+        });
+    </script>
+</body>
+</html>
